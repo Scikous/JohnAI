@@ -9,8 +9,9 @@ from typing import Any, Dict, Generator, List, Optional, AsyncGenerator
 @dataclass
 class BaseModelConfig:
     """Base configuration for any LLM model."""
-    model_path_or_id: str = "HuggingFaceTB/SmolLM2-135M-Instruct"
+    model_path_or_id: str = "Qwen/Qwen2.5-VL-7B-Instruct"#"HuggingFaceTB/SmolLM2-135M-Instruct"
     is_vision_model: bool = False
+    uses_special_chat_template: bool = False
     max_seq_len: int = 4096
     character_name: str = 'assistant'
     instructions: str = ""
@@ -53,7 +54,7 @@ class VtuberLLMBase(ABC):
         pass
 
 # --- Asynchronous Base Class ---
-class VtuberLLMAsyncBase(VtuberLLMBase):
+class VtuberLLMAsyncBase(ABC):
     """Abstract base class for asynchronous Vtuber LLM models."""
 
     @classmethod

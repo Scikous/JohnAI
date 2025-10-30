@@ -1,77 +1,121 @@
 import gc
 import logging
 import uuid
-from dataclasses import dataclass
-from typing import Any, Dict, Generator, List, Optional, AsyncGenerator
+from typing import Any, Dict, List, Optional, AsyncGenerator, Union
 
-from vllm import SamplingParams
+from vllm import LLM, SamplingParams
 from vllm.sampling_params import GuidedDecodingParams
+from vllm.engine.arg_utils import AsyncEngineArgs
+from vllm.v1.engine.async_llm import AsyncLLM
 
-from vllm.sampling_params import RequestOutputKind
+from LLM_Wizard.utils.special_chat_templates import get_special_template_for_model
+
 import torch
 from model_utils import apply_chat_template
 
 from .base import BaseModelConfig, VtuberLLMAsyncBase, VtuberLLMBase
 
-# --- Shared Logic ---
-def _prepare_prompt(instance: Any,
-                    prompt: str,
-                    assistant_prompt: Optional[str]=None,
-                    conversation_history: Optional[List[str]] = None,
-                    images: Optional[List[Dict]] = None,
-                    add_generation_prompt: bool = True,
-                    continue_final_message: bool = False,
-                    **kwargs) -> str:
-    """Applies the chat template to build the final prompt string."""
-    # This helper function is shared between sync and async classes
-    if images and instance.config.is_vision_model:
-        instance.logger.warning("Image data provided, but vLLM image handling is not yet implemented. Ignoring images.")
+
+class _VLLMInterfaceMixin:
+    """
+    A mixin to share prompt preparation and sampling parameter logic for vLLM implementations.
     
-    return apply_chat_template(
-        instructions=instance.instructions,
-        prompt=prompt,
-        assistant_prompt=assistant_prompt,
-        conversation_history=conversation_history,
-        tokenizer=instance.tokenizer,
-        tokenize=False,
-        add_generation_prompt=add_generation_prompt,
-        continue_final_message=continue_final_message,
-    )
-
-
-def _create_sampling_params(generation_config: Optional[Dict[str, Any]] = None) -> SamplingParams:
+    This class contains instance methods that depend on the state of the consumer
+    class (e.g., tokenizer, instructions) and static methods for pure utility functions.
     """
-    Creates a vLLM SamplingParams object from a configuration dictionary.
 
-    This helper function is responsible for parsing the generation configuration,
-    specifically handling the dynamic creation of GuidedDecodingParams.
+    def _prepare_prompt(
+        self,
+        prompt: str,
+        assistant_prompt: Optional[str] = None,
+        conversation_history: Optional[List[str]] = None,
+        images: Optional[List[Dict]] = None,
+        add_generation_prompt: bool = True,
+        continue_final_message: bool = False,
+        **kwargs,
+    ) -> str:        
+        """Applies the chat template to build the final prompt string."""
+        # This is an instance method and now correctly accesses self.tokenizer etc.
+        return apply_chat_template(
+            instructions=self.instructions,
+            prompt=prompt,
+            assistant_prompt=assistant_prompt,
+            images=images,
+            conversation_history=conversation_history,
+            tokenizer=self.tokenizer,
+            tokenize=False,
+            add_generation_prompt=add_generation_prompt,
+            continue_final_message=continue_final_message,
+        )
 
-    Args:
-        generation_config (Dict[str, Any], optional): A dictionary containing parameters
-            for vLLM's SamplingParams, including a special 'guided_decoding' key.
+    @staticmethod
+    def _create_sampling_params(
+        generation_config: Optional[Dict[str, Any]] = None,
+    ) -> SamplingParams:
+        """
+        Creates a vLLM SamplingParams object from a configuration dictionary.
 
-    Returns:
-        SamplingParams: A configured vLLM sampling parameters object.
-    """
-    config = generation_config.copy() if generation_config else {}
+        This helper function is responsible for parsing the generation configuration,
+        specifically handling the dynamic creation of GuidedDecodingParams.
 
-    # Handle guided decoding agnostically
-    guided_decoding_config = config.pop("guided_decoding", None)
-    guided_decoding_params = None
+        Args:
+            generation_config (Dict[str, Any], optional): A dictionary containing parameters
+                for vLLM's SamplingParams, including a special 'guided_decoding' key.
 
-    if guided_decoding_config:
-        # Expects a dict with a single key like 'json', 'regex', 'grammar'
-        # e.g., {'json': '{"type": "object"}'}
-        if isinstance(guided_decoding_config, dict) and len(guided_decoding_config) == 1:
-            # The key is the type (json, regex), the value is the schema
-            guided_decoding_params = GuidedDecodingParams(**guided_decoding_config)
-        else:
-            raise ValueError(
-                "'guided_decoding' in generation_config must be a dictionary "
-                "with a single key specifying the decoding type (e.g., 'json', 'regex')."
-            )
+        Returns:
+            SamplingParams: A configured vLLM sampling parameters object.
+        """
+        config = generation_config.copy() if generation_config else {}
 
-    return SamplingParams(guided_decoding=guided_decoding_params, **config)
+        guided_decoding_config = config.pop("guided_decoding", None)
+        guided_decoding_params = None
+
+        if guided_decoding_config:
+            if isinstance(guided_decoding_config, dict) and len(guided_decoding_config) == 1:
+                guided_decoding_params = GuidedDecodingParams(**guided_decoding_config)
+            else:
+                raise ValueError(
+                    "'guided_decoding' in generation_config must be a dictionary "
+                    "with a single key specifying the decoding type (e.g., 'json', 'regex')."
+                )
+
+        return SamplingParams(guided_decoding=guided_decoding_params, **config)
+
+    def _prepare_inputs(
+        self,
+        prompt: str,
+        assistant_prompt: Optional[str],
+        conversation_history: Optional[List[str]],
+        images: Optional[List[Dict]],
+        add_generation_prompt: bool,
+        continue_final_message: bool,
+        generation_config: Optional[Dict[str, Any]],
+    ) -> Dict[str, Union[str, Dict, SamplingParams]]:
+        """
+        Prepares all common inputs required for the vLLM engine's generate call.
+        
+        This private helper centralizes the logic for prompt preparation and
+        sampling parameter creation, serving both sync and async methods.
+        """
+        full_prompt = self._prepare_prompt(
+            prompt,
+            assistant_prompt,
+            conversation_history,
+            images,
+            add_generation_prompt,
+            continue_final_message,
+        )
+
+        sampling_params = self._create_sampling_params(generation_config)
+
+        # Consolidate all inputs into a single dictionary
+        if images:
+            return {
+                "prompt": {"prompt": full_prompt, "multi_modal_data": {"image": images}},
+                "sampling_params": sampling_params,
+            }
+        
+        return {"prompt": full_prompt, "sampling_params": sampling_params}
 
 
 _DIALOGUE_GENERATOR_DOCSTRING = """
@@ -103,19 +147,18 @@ Returns:
 """
 
 # --- Asynchronous vLLM Implementation ---
-class VtuberVLLMAsync(VtuberLLMAsyncBase):
+class VtuberVLLMAsync(VtuberLLMAsyncBase, _VLLMInterfaceMixin):
     """Asynchronous implementation of VtuberLLMBase using vLLM's AsyncLLM."""
 
     def __init__(self, config: BaseModelConfig, logger: Optional[logging.Logger] = None):
         super().__init__(config, logger)
-        self.engine: Optional[Any] = None
+        self.engine: Optional[AsyncLLM] = None
         self.tokenizer: Optional[Any] = None
         self.current_request_id: Optional[str] = None
 
+    #needs to be async
     @classmethod
     async def load_model(cls, config: BaseModelConfig) -> "VtuberVLLMAsync":
-        from vllm import AsyncLLM
-        from vllm.engine.arg_utils import AsyncEngineArgs
         instance = cls(config)
         instance.logger.info(f"Initializing vLLM AsyncLLM for model: {config.model_path_or_id}")
         engine_args = AsyncEngineArgs(
@@ -137,19 +180,12 @@ class VtuberVLLMAsync(VtuberLLMAsyncBase):
                              generation_config: Optional[Dict[str, Any]] = None
                              ) -> AsyncGenerator[str, None]:
         
-        full_prompt = _prepare_prompt(self,
-                                      prompt,
-                                      assistant_prompt,
-                                      conversation_history,
-                                      images,
-                                      add_generation_prompt,
-                                      continue_final_message
-                                                  )
-        sampling_params = _create_sampling_params(generation_config)
+        vllm_inputs = self._prepare_inputs(prompt, assistant_prompt, conversation_history, images,
+            add_generation_prompt, continue_final_message, generation_config
+        )
         self.current_request_id = f"vtuber-llm-{uuid.uuid4().hex}"
         
-        results_generator = self.engine.generate(full_prompt, sampling_params, self.current_request_id)
-        
+        results_generator = self.engine.generate(vllm_inputs["prompt"], sampling_params=vllm_inputs["sampling_params"], request_id=self.current_request_id)
         async for request_output in results_generator:
             new_text = request_output.outputs[0].text
             yield new_text
@@ -188,17 +224,16 @@ class VtuberVLLMAsync(VtuberLLMAsyncBase):
         self.logger.info("Cleaned up async vLLM resources.")
 
 # --- Synchronous vLLM Implementation ---
-class VtuberVLLM(VtuberLLMBase):
+class VtuberVLLM(VtuberLLMBase, _VLLMInterfaceMixin):
     """Synchronous implementation of VtuberLLMBase using vLLM's LLM."""
 
     def __init__(self, config: BaseModelConfig, logger: Optional[logging.Logger] = None):
         super().__init__(config, logger)
-        self.engine: Optional[Any] = None
+        self.engine: Optional[LLM] = None
         self.tokenizer: Optional[Any] = None
 
     @classmethod
     def load_model(cls, config: BaseModelConfig) -> "VtuberVLLM":
-        from vllm import LLM
         instance = cls(config)
         instance.logger.info(f"Initializing vLLM LLM for model: {config.model_path_or_id}")
         instance.engine = LLM(
@@ -206,6 +241,10 @@ class VtuberVLLM(VtuberLLMBase):
             **config.model_init_kwargs
         )
         instance.tokenizer = instance.engine.get_tokenizer()
+
+        if config.uses_special_chat_template:
+            instance.tokenizer.chat_template = get_special_template_for_model(config.model_path_or_id)
+            instance.logger.info(f"Special chat template loaded for model: {config.model_path_or_id}")
         return instance
 
     def dialogue_generator(self,
@@ -218,18 +257,10 @@ class VtuberVLLM(VtuberLLMBase):
                        generation_config: Optional[Dict[str, Any]] = None
                        ) -> str:
         
-
-        full_prompt = _prepare_prompt(self,
-                                        prompt,
-                                        assistant_prompt,
-                                        conversation_history,
-                                        images,
-                                        add_generation_prompt,
-                                        continue_final_message
-                                        )
-        
-        sampling_params = _create_sampling_params(generation_config)
-        outputs = self.engine.generate(full_prompt, sampling_params)
+        vllm_inputs = self._prepare_inputs(prompt, assistant_prompt, conversation_history, images,
+            add_generation_prompt, continue_final_message, generation_config
+        )
+        outputs = self.engine.generate(vllm_inputs["prompt"], sampling_params=vllm_inputs["sampling_params"])
         return outputs[0].outputs[0].text
 
     # Set the docstring dynamically

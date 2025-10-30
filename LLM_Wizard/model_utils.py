@@ -8,16 +8,19 @@ import logging
 import os
 from typing import List, Optional
 
-import aiohttp
 from PIL import Image
 from transformers import PreTrainedTokenizer
+import aiohttp
 
 logger = logging.getLogger(__name__)
+
+
 
 def apply_chat_template(
     instructions: str,
     prompt: str,
     tokenizer: PreTrainedTokenizer,
+    images: List = None,
     assistant_prompt: Optional[str] = None,
     conversation_history: Optional[List[str]] = None,
     tokenize: bool = True,
@@ -45,26 +48,35 @@ def apply_chat_template(
             # even = user, odd = assistant
             role = "user" if i % 2 == 0 else "assistant"
             messages.append({"role": role, "content": msg})
+
     
+    if images:
+        content = [{"type": "image", "image": img} for img in images]
+        content.append({"type": "text", "text": f"\n{prompt}"})
+        messages.append({"role": "user", "content": content})#f"(<image>./</image>)(<image>./</image>)\n{prompt}"})
+    else:
+        messages.append({"role": "user", "content": prompt})
+        
     # continue from last LLM generation or create brand new generation
     if continue_final_message:
         if assistant_prompt:
-            messages.append({"role": "user", "content": prompt})
             messages.append({"role": "assistant", "content": assistant_prompt})
         else:
             logger.warning("No assistant prompt provided, using user prompt as assistant prompt")
             messages.append({"role": "assistant", "content": prompt})
-    else:
-        messages.append({"role": "user", "content": prompt})
-    
     # apply_chat_template handles BOS token logic internally when tokenize=True
-    return tokenizer.apply_chat_template(
+    # return
+    
+    t = tokenizer.apply_chat_template(
         messages, 
-        tokenize=tokenize, 
+        tokenize=tokenize,
         add_generation_prompt=add_generation_prompt,
         continue_final_message=continue_final_message,
-        return_tensors="pt"
+        return_tensors="pt",
+        # enable_thinking=False
     )
+    print(t)
+    return t
 
 
 
@@ -184,6 +196,7 @@ async def get_image(file: Optional[str] = None, url: Optional[str] = None) -> Im
         FileNotFoundError: If the local file does not exist.
         Exception: For network-related errors during download.
     """
+
     if not (file or url) or (file and url):
         raise ValueError("Provide either a 'file' or a 'url', but not both.")
 
