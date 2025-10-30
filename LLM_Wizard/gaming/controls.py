@@ -145,7 +145,7 @@ class InputController:
             "ALT": "LEFTALT",
             "WIN": "LEFTMETA", "SUPER": "LEFTMETA",
             "ENTER": "ENTER", "RETURN": "ENTER",
-            "ESC": "ESC",
+            "ESC": "ESC", "ESCAPE": "ESC",
             "SPACE": "SPACE",
         }
         key_str = alias_map.get(key_str, key_str)
