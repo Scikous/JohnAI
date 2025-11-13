@@ -157,12 +157,17 @@ class InputController:
 
     def _handle_key_press(self, details: Dict[str, Any]):
         """Handles a single, quick key press (tap)."""
-        key_code = self._get_keycode(details.get("key"))
-        if not key_code: return
-        
-        self.ui.write(e.EV_KEY, key_code, 1); self.ui.syn() # Key down
-        time.sleep(0.05)
-        self.ui.write(e.EV_KEY, key_code, 0); self.ui.syn() # Key up
+        keys = [key for key in details.get("key")]
+        key_codes = [self._get_keycode(key) for key in keys]
+        # key_codes = [key for key in self._get_keycode(details.get("key"))]
+        # key_code = self._get_keycode(details.get("key"))
+        hold_time = details.get("hold_time", 0.05)
+        # if not key_code: return
+        for key_code in key_codes:
+            self.ui.write(e.EV_KEY, key_code, 1); self.ui.syn() # Key down
+        time.sleep(hold_time)
+        for key_code in key_codes:
+            self.ui.write(e.EV_KEY, key_code, 0); self.ui.syn() # Key up
 
     def _handle_key_down(self, details: Dict[str, Any]):
         """Handles pressing and holding a key down."""
