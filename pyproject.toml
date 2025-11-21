@@ -1,0 +1,26 @@
+[project]
+name = "johnai"
+version = "0.1.0"
+description = "one AI to rule them all"
+authors = [
+    {name = "Scikous",email = "95752605+Scikous@users.noreply.github.com"}
+]
+license = {text = "Apache-2.0"}
+readme = "README.md"
+requires-python = ">=3.12, <3.14"
+dependencies = [
+    "evdev (>=1.9.2,<2.0.0)",
+    "screeninfo (>=0.8.1,<0.9.0)",
+    "opencv-python (>=4.12.0.88,<5.0.0.0)",
+    "qwen-vl-utils (>=0.0.14,<0.0.15)",
+    "ultralytics (>=8.3.228,<9.0.0)",
+    "roboflow (>=1.2.11,<2.0.0)",
+    "supervision (>=0.26.1,<0.27.0)",
+    "psutil (>=7.1.3,<8.0.0)",
+    "opencv-contrib-python (>=4.12.0.88,<5.0.0.0)",
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
