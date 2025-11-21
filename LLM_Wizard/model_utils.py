@@ -66,8 +66,7 @@ def apply_chat_template(
             messages.append({"role": "assistant", "content": prompt})
     # apply_chat_template handles BOS token logic internally when tokenize=True
     # return
-    
-    t = tokenizer.apply_chat_template(
+    templated_prompt = tokenizer.apply_chat_template(
         messages, 
         tokenize=tokenize,
         add_generation_prompt=add_generation_prompt,
@@ -75,8 +74,8 @@ def apply_chat_template(
         return_tensors="pt",
         # enable_thinking=False
     )
-    print(t)
-    return t
+
+    return templated_prompt, messages
 
 
 
