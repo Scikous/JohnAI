@@ -1,279 +1,273 @@
-import os
-import signal
-import time
-import uuid
-from typing import List, Optional, Deque
 
-import dbus
-import numpy as np
-from PIL import Image
-from dbus.mainloop.glib import DBusGMainLoop
-
-import gi
-gi.require_version('Gst', '1.0')
-from gi.repository import GLib, Gst
-
-from collections import deque
-from queue import Empty
+# ## NEW SMEXY CODE
+import cv2
 import multiprocessing as mp
-
-# Initialize GStreamer and DBus loop
-Gst.init(None)
-DBusGMainLoop(set_as_default=True)
-
-class ScreenCastCapture:
-    def __init__(self, source_type: int = 1, cursor_mode: int = 2):
-        """
-        source_type: 1 (monitor/full-screen), 2 (window)
-        cursor_mode: 1 (hidden), 2 (embedded), 4 (metadata)
-        """
-        self.bus = dbus.SessionBus()
-        self.portal = self.bus.get_object('org.freedesktop.portal.Desktop', '/org/freedesktop/portal/desktop')
-        self.portal_interface = dbus.Interface(self.portal, 'org.freedesktop.portal.ScreenCast')
-        self.request_interface = 'org.freedesktop.portal.Request'
-        self.session = None
-        self.pipeline = None
-        self.node_id = None
-        self.source_type = source_type
-        self.cursor_mode = cursor_mode
-        self.loop = GLib.MainLoop()
-        self.response_handlers = {}
-        self.request_path_map = {} # To map request paths back to tokens
-        signal.signal(signal.SIGINT, self.stop_capture)
-
-    def _generate_token(self) -> str:
-        return str(uuid.uuid4()).replace('-', '_')
-
-    def _request_path(self, token: str) -> str:
-        unique_name = self.bus.get_unique_name()[1:].replace('.', '_')
-        path = f'/org/freedesktop/portal/desktop/request/{unique_name}/{token}'
-        self.request_path_map[path] = token # Map path to token
-        return path
-
-    def _add_response_handler(self, token: str, callback):
-        path = self._request_path(token)
-        self.response_handlers[token] = callback
-        self.bus.add_signal_receiver(
-            self._handle_response,
-            signal_name='Response',
-            dbus_interface=self.request_interface,
-            path=path,
-            path_keyword='path' # Ask dbus-python to pass the object path
-        )
-
-    def _handle_response(self, response_code: int, results: dict, path=None):
-        if path and path in self.request_path_map:
-            token = self.request_path_map[path]
-            if token in self.response_handlers:
-                callback = self.response_handlers[token]
-                if response_code != 0:
-                    print(f"Portal request failed for token {token}: code {response_code}, results {results}")
-                    self.loop.quit()
-                    return
-
-                callback(results)
-                # Clean up
-                del self.response_handlers[token]
-                del self.request_path_map[path]
-        else:
-            print(f"Warning: Received a response for an unknown request path: {path}")
+from multiprocessing import shared_memory
+import numpy as np
+import time
+from queue import Full, Empty
+import threading
+import psutil
+import os
+from dataclasses import dataclass, field
+from typing import List, Tuple, Optional
+import concurrent.futures
 
 
-    def create_session(self, callback):
-        token = self._generate_token()
-        self._add_response_handler(token, lambda res: callback(res['session_handle']))
-        options = {'handle_token': token, 'session_handle_token': self._generate_token()}
-        self.portal_interface.CreateSession(options)
+# --- Configuration ---
+@dataclass
+class SystemConfig:
+    device_index: int = 0
+    src_width: int = 1920
+    src_height: int = 1080
+    target_fps: int = 30
+    target_size: Tuple[int, int] = (1000, 1000)
+    enable_psutil: bool = True
+    worker_priority: int = -20
+    worker_affinity: Optional[List[int]] = field(default_factory=lambda: [2])
+    warmup_time: float = 4.0
 
-    def select_sources(self, session_handle: str, callback):
-        token = self._generate_token()
-        # The response for SelectSources has no results, so we just need to trigger the next step.
-        self._add_response_handler(token, lambda _: callback())
-        options = {
-            'handle_token': token,
-            'types': dbus.UInt32(self.source_type),
-            'cursor_mode': dbus.UInt32(self.cursor_mode),
-            'multiple': False,
-        }
-        self.portal_interface.SelectSources(session_handle, options)
+# --- Helper for Resizing (Unchanged) ---
+def process_single_frame_letterbox(frame, target_size):
+    src_h, src_w = frame.shape[:2]
+    dst_w, dst_h = target_size
+    scale = min(dst_w / src_w, dst_h / src_h)
+    new_w = int(src_w * scale)
+    new_h = int(src_h * scale)
+    resized = cv2.resize(frame, (new_w, new_h), interpolation=cv2.INTER_AREA)
+    canvas = np.zeros((dst_h, dst_w, 3), dtype=np.uint8)
+    x_offset = (dst_w - new_w) // 2
+    y_offset = (dst_h - new_h) // 2
+    canvas[y_offset:y_offset+new_h, x_offset:x_offset+new_w] = resized
+    return canvas
 
-    def start_session(self, session_handle: str, callback):
-        token = self._generate_token()
-        self._add_response_handler(token, lambda res: callback(res['streams']))
-        options = {'handle_token': token}
-        self.portal_interface.Start(session_handle, '', options)
+# --- Workers ---
 
-    def setup_pipeline(self, node_id: int, fd: int):
-        print(f"Setting up pipeline with PipeWire node ID: {node_id} and FD: {fd}")
-        pipeline_str = (
-            f'pipewiresrc fd={fd} path={node_id} do-timestamp=true ! '
-            'videoconvert ! video/x-raw,format=RGB ! '
-            'appsink name=sink emit-signals=true sync=false max-buffers=1 drop=true'
-        )
-        self.pipeline = Gst.parse_launch(pipeline_str)
-        self.pipeline.set_state(Gst.State.PLAYING)
-        print("Pipeline state set to PLAYING.")
-        # A small delay to allow the pipeline to start producing samples
-        GLib.timeout_add(500, self.loop.quit) # Quit the loop to start capturing
-
-    def capture_frame(self) -> Optional[np.ndarray]:
-        if not self.pipeline or self.pipeline.get_state(0)[1] != Gst.State.PLAYING:
-            print("Pipeline not ready or not playing.")
-            return None
-        sink = self.pipeline.get_by_name('sink')
-        sample = sink.emit('pull-sample')
-        if not sample:
-            print("Failed to pull sample from appsink.")
-            return None
-        buf = sample.get_buffer()
-        caps = sample.get_caps().get_structure(0)
-        height, width = caps.get_value('height'), caps.get_value('width')
-        data = buf.extract_dup(0, buf.get_size())
-        return np.frombuffer(data, dtype=np.uint8).reshape((height, width, 3))
-
-    def start_capture(self):
-        def on_create(session_handle):
-            print(f"Session created: {session_handle}")
-            self.session = session_handle
-            # Pass a lambda that calls start_session as the callback
-            self.select_sources(session_handle, lambda: self.start_session(session_handle, on_start))
-
-        def on_start(streams):
-            print(f"Session started, streams: {streams}")
-            if not streams:
-                print("No streams available.")
-                self.loop.quit()
-                return
-            stream_props = streams[0] # This is a dbus.Struct
-            self.node_id = stream_props[0]
-            
-            # The key change is here!
-            # The file descriptor is passed in the 'options' dictionary of the method call.
-            # We need to tell dbus-python to expect it.
-            fd_obj = self.portal_interface.OpenPipeWireRemote(self.session, {}, get_handles=True)
-            
-            # The returned object is now a dbus.UnixFd
-            # We extract the integer file descriptor from it.
-            fd = fd_obj.take()
-            
-            self.setup_pipeline(self.node_id, fd)
-
-        self.create_session(on_create)
-        print("Starting GLib MainLoop for setup. A portal dialog should appear.")
-        print("Please approve the screen sharing request.")
-        self.loop.run()
-
-    def stop_capture(self, *args):
-        print("Stopping capture...")
-        if self.pipeline:
-            self.pipeline.set_state(Gst.State.NULL)
-        if self.session:
-            try:
-                session_iface = dbus.Interface(self.bus.get_object('org.freedesktop.portal.Desktop', self.session), 'org.freedesktop.portal.Session')
-                session_iface.Close()
-            except dbus.exceptions.DBusException as e:
-                print(f"Could not close session (it may already be closed): {e}")
-        if self.loop.is_running():
-            self.loop.quit()
-
-def capture_images(images_dequeue: Deque, interval_sec: float = 0.1, source_type: int = 1):
-    capturer = ScreenCastCapture(source_type=source_type)
-    try:
-        # This part now blocks until the user approves the portal and the pipeline is ready
-        capturer.start_capture()
-        while True:
-            frame = capturer.capture_frame()
-            if frame is not None:
-                print(f"  - Captured frame")
-                images_dequeue.append(Image.fromarray(frame))
-            else:
-                print(f"  - Failed to capture frame")
-            time.sleep(interval_sec)
-    except Exception as e:
-        print(f"An error occurred during capture: {e}")
-    finally:
-        capturer.stop_capture()
-
-
-
-
-class GameCaptureWorker(mp.Process):
-    """
-    An independent worker process for capturing the screen.
-
-    This worker is designed to run in its own process to avoid blocking the
-    main application and to bypass the GIL. It communicates with the main
-    process via multiprocessing queues.
-    """
-    def __init__(self,
-                 image_data_queue: mp.Queue,
-                 command_queue: mp.Queue,
-                 stop_event: mp.Event,
-                 source_type: int = 1,
-                 interval_sec: float = 0.1,
-                 target_size: Optional[tuple[int, int]] = (1280, 720)):
+class CaptureWorker(mp.Process):
+    def __init__(self, config: SystemConfig, shm_name, frame_shape, frame_dtype, notification_q, stop_event, shm_lock):
         super().__init__()
-        self.image_data_queue = image_data_queue
-        self.command_queue = command_queue
+        self.config = config
+        self.shm_name = shm_name
+        self.frame_shape = frame_shape
+        self.frame_dtype = frame_dtype
+        self.notification_q = notification_q
         self.stop_event = stop_event
-        self.source_type = source_type
-        self.interval_sec = interval_sec
-        self.target_size = target_size
-        self.capturer = None
+        self.shm_lock = shm_lock # New Lock
+        self.daemon = True
+
+    def _configure_process(self):
+        if not self.config.enable_psutil: return
+        try:
+            p = psutil.Process(os.getpid())
+            p.nice(self.config.worker_priority)
+            if self.config.worker_affinity:
+                p.cpu_affinity(self.config.worker_affinity)
+        except Exception as e:
+            print(f"[CaptureWorker] PSUTIL Setup Warning: {e}")
 
     def run(self):
-        """The main loop of the worker process."""
-        print(f"[CaptureWorker-{os.getpid()}] Starting...")
-        # GStreamer and DBus objects must be instantiated within the new process
-        self.capturer = ScreenCastCapture(source_type=self.source_type)
+        self._configure_process()
+        try:
+            shm = shared_memory.SharedMemory(name=self.shm_name)
+            shm_array = np.ndarray(self.frame_shape, dtype=self.frame_dtype, buffer=shm.buf)
+        except FileNotFoundError:
+            return
+
+        cap = cv2.VideoCapture(self.config.device_index)
+        cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'YUYV'))
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.config.src_width)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.config.src_height)
+        cap.set(cv2.CAP_PROP_FPS, self.config.target_fps)
+        cap.grab()
+
+        while not self.stop_event.is_set():
+            ret, frame = cap.read()
+            if ret:
+                # CRITICAL FIX: Acquire lock before writing to shared memory
+                with self.shm_lock:
+                    shm_array[:] = frame
+                
+                try:
+                    self.notification_q.put_nowait(time.perf_counter())
+                except Full:
+                    pass 
+            else:
+                time.sleep(0.01)
+
+        cap.release()
+        shm.close()
+
+class FrameCollector(threading.Thread):
+    def __init__(self, config: SystemConfig, shm_name, frame_shape, frame_dtype, notification_q, stop_event, capturing_event, shm_lock):
+        super().__init__()
+        self.config = config
+        self.shm_name = shm_name
+        self.frame_shape = frame_shape
+        self.frame_dtype = frame_dtype
+        self.notification_q = notification_q
+        self.stop_event = stop_event
+        self.capturing_event = capturing_event
+        self.shm_lock = shm_lock # New Lock
+        self.results = []
+        self.daemon = True
+
+    def run(self):
+        shm = shared_memory.SharedMemory(name=self.shm_name)
+        shm_array = np.ndarray(self.frame_shape, dtype=self.frame_dtype, buffer=shm.buf)
+
+        while not self.stop_event.is_set():
+            try:
+                _ = self.notification_q.get(timeout=0.1)
+                
+                if self.capturing_event.is_set():
+                    # CRITICAL FIX: Acquire lock before reading shared memory
+                    # This waits until the Worker is done writing the full frame
+                    with self.shm_lock:
+                        self.results.append(shm_array.copy())
+            except Empty:
+                continue
+            except Exception:
+                break
+        
+        shm.close()
+
+class CaptureManager:
+    def __init__(self, config: SystemConfig):
+        self.config = config
+        self.frame_shape = (config.src_height, config.src_width, 3)
+        self.frame_dtype = np.uint8
+        frame_bytes = int(np.prod(self.frame_shape) * np.dtype(self.frame_dtype).itemsize)
         
         try:
-            # This blocks until the user approves the portal and the pipeline is ready
-            self.capturer.start_capture()
+            self.shm = shared_memory.SharedMemory(create=True, size=frame_bytes)
+        except FileExistsError:
+            try:
+                temp = shared_memory.SharedMemory(name='frame_shm_buffer') 
+                temp.unlink()
+            except: pass
+            self.shm = shared_memory.SharedMemory(create=True, size=frame_bytes)
 
-            while not self.stop_event.is_set():
-                start_time = time.perf_counter()
+        self.notification_q = mp.Queue(maxsize=120) 
+        self.stop_event = mp.Event()
+        self.capturing_event = threading.Event()
+        
+        # NEW: The Lock preventing the race condition
+        self.shm_lock = mp.Lock()
 
-                self._handle_commands()
+        self._worker = CaptureWorker(
+            config, self.shm.name, self.frame_shape, self.frame_dtype,
+            self.notification_q, self.stop_event, self.shm_lock
+        )
+        self._collector = FrameCollector(
+            config, self.shm.name, self.frame_shape, self.frame_dtype,
+            self.notification_q, self.stop_event, self.capturing_event, self.shm_lock
+        )
 
-                frame = self.capturer.capture_frame()
-                if frame is not None:
-                    image = Image.fromarray(frame)
+    def start_system(self):
+        print(f"System: Starting capture process...")
+        self._worker.start()
+        self._collector.start()
+        
+        if self.config.warmup_time > 0:
+            print(f"System: Warming up for {self.config.warmup_time} seconds...")
+            time.sleep(self.config.warmup_time)
+            while not self.notification_q.empty():
+                try: self.notification_q.get_nowait()
+                except Empty: break
+            print("System: Ready.")
 
-                    # Pre-process the image (resize) before sending
-                    # This reduces data transfer size and offloads work from the main process
-                    if self.target_size:
-                        image = image.resize(self.target_size, Image.Resampling.LANCZOS)
+    def stop_system(self):
+        self.stop_event.set()
+        self._worker.join(timeout=2)
+        self._collector.join(timeout=2)
+        if self._worker.is_alive(): self._worker.terminate()
+        self.shm.close()
+        try: self.shm.unlink()
+        except FileNotFoundError: pass
 
-                    # Send serialized data for efficiency
-                    # A dictionary of primitives is much faster to pickle than a PIL object
-                    data_packet = {
-                        'image_bytes': image.tobytes(),
-                        'size': image.size,
-                        'mode': image.mode,
-                    }
-                    self.image_data_queue.put(data_packet)
-                
-                # Maintain the desired interval
-                elapsed = time.perf_counter() - start_time
-                sleep_time = self.interval_sec - elapsed
-                if sleep_time > 0:
-                    time.sleep(sleep_time)
+    def start_capture(self):
+        self._collector.results.clear()
+        self.capturing_event.set()
 
-        except Exception as e:
-            print(f"[CaptureWorker-{os.getpid()}] An error occurred: {e}")
-        finally:
-            print(f"[CaptureWorker-{os.getpid()}] Stopping...")
-            if self.capturer:
-                self.capturer.stop_capture()
+    def stop_capture(self) -> List[np.ndarray]:
+        self.capturing_event.clear()
+        return list(self._collector.results)
 
-    def _handle_commands(self):
-        """Check for and execute commands from the main process."""
-        try:
-            command = self.command_queue.get_nowait()
-            if command['action'] == 'set_interval':
-                new_interval = command['value']
-                print(f"[CaptureWorker-{os.getpid()}] Updating interval to {new_interval}s")
-                self.interval_sec = new_interval
-        except Empty:
-            pass # No commands
+    def post_process_frames(self, frames: List[np.ndarray]) -> List[np.ndarray]:
+        if not frames: return []
+        processed_frames = [None] * len(frames)
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            futures = {
+                executor.submit(process_single_frame_letterbox, frame, self.config.target_size): i 
+                for i, frame in enumerate(frames)
+            }
+            for future in concurrent.futures.as_completed(futures):
+                idx = futures[future]
+                processed_frames[idx] = future.result()
+        return processed_frames    
+
+    def get_snapshot(self, duration: float = 0.1) -> Optional[np.ndarray]:
+        """
+        Helper to grab a single frame using the batch-oriented manager.
+        It captures for a fraction of a second and returns the last frame.
+        """
+        frames = None
+        while not frames:
+            self.start_capture()
+            time.sleep(duration)
+            frames = self.stop_capture()
+        
+        if frames:
+            return frames[-1] # Return the most recent frame
+        return None
+
+if __name__ == "__main__":
+    
+    # Configuration
+    config = SystemConfig(
+        device_index=0,
+        src_width=2560,
+        src_height=1440,
+        target_fps=60,
+        target_size=(1000, 1000), # VLM Preferred Size
+        enable_psutil=True,       
+        worker_affinity=[2],     
+        warmup_time=2.0           
+    )
+
+    manager = CaptureManager(config)
+    
+    try:
+        manager.start_system()
+
+        for i in range(1): 
+            print(f"\n--- Run {i+1} ---")
+            
+            manager.start_capture()
+            start_time = time.perf_counter()
+            
+            # Capture exactly 1 second
+            time.sleep(1.0)
+            
+            raw_frames = manager.stop_capture()
+            duration = time.perf_counter() - start_time
+            
+            print(f"Captured {len(raw_frames)} raw frames in {duration:.4f}s")
+            
+            # Resize logic runs AFTER capture
+            t0_proc = time.perf_counter()
+            final_frames = manager.post_process_frames(raw_frames)
+            proc_time = time.perf_counter() - t0_proc
+            
+            print(f"Processed (Letterboxed) {len(final_frames)} frames in {proc_time:.4f}s")
+
+            # Save debug image
+            if final_frames:
+                save_path = "debug_frames/debug_letterbox.png"
+                cv2.imwrite(save_path, final_frames[0])
+                print(f"Saved sample to {save_path}")
+
+    except KeyboardInterrupt:
+        print("Interrupted.")
+    finally:
+        manager.stop_system()
