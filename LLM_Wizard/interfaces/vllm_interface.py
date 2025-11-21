@@ -4,9 +4,11 @@ import uuid
 from typing import Any, Dict, List, Optional, AsyncGenerator, Union
 
 from vllm import LLM, SamplingParams
-from vllm.sampling_params import GuidedDecodingParams
+from vllm.sampling_params import StructuredOutputsParams#, StructuredOutputsParams
 from vllm.engine.arg_utils import AsyncEngineArgs
 from vllm.v1.engine.async_llm import AsyncLLM
+
+from qwen_vl_utils import process_vision_info
 
 from LLM_Wizard.utils.special_chat_templates import get_special_template_for_model
 
@@ -56,7 +58,7 @@ class _VLLMInterfaceMixin:
         Creates a vLLM SamplingParams object from a configuration dictionary.
 
         This helper function is responsible for parsing the generation configuration,
-        specifically handling the dynamic creation of GuidedDecodingParams.
+        specifically handling the dynamic creation of StructuredOutputsParams.
 
         Args:
             generation_config (Dict[str, Any], optional): A dictionary containing parameters
@@ -72,14 +74,14 @@ class _VLLMInterfaceMixin:
 
         if guided_decoding_config:
             if isinstance(guided_decoding_config, dict) and len(guided_decoding_config) == 1:
-                guided_decoding_params = GuidedDecodingParams(**guided_decoding_config)
+                guided_decoding_params = StructuredOutputsParams(**guided_decoding_config)
             else:
                 raise ValueError(
                     "'guided_decoding' in generation_config must be a dictionary "
                     "with a single key specifying the decoding type (e.g., 'json', 'regex')."
                 )
 
-        return SamplingParams(guided_decoding=guided_decoding_params, **config)
+        return SamplingParams(structured_outputs=guided_decoding_params, **config)
 
     def _prepare_inputs(
         self,
@@ -97,7 +99,7 @@ class _VLLMInterfaceMixin:
         This private helper centralizes the logic for prompt preparation and
         sampling parameter creation, serving both sync and async methods.
         """
-        full_prompt = self._prepare_prompt(
+        full_prompt, messages = self._prepare_prompt(
             prompt,
             assistant_prompt,
             conversation_history,
@@ -108,10 +110,17 @@ class _VLLMInterfaceMixin:
 
         sampling_params = self._create_sampling_params(generation_config)
 
+        print(messages)
         # Consolidate all inputs into a single dictionary
-        if images:
+        if images and self._is_vision_model:
+            image_inputs, _, video_kwargs, = process_vision_info(
+                messages,
+                image_patch_size=self.tokenizer.image_processor.patch_size,
+                return_video_kwargs=True,
+                return_video_metadata=True
+            )
             return {
-                "prompt": {"prompt": full_prompt, "multi_modal_data": {"image": images}},
+                "prompt": {"prompt": full_prompt, "multi_modal_data": {"image": image_inputs}, "mm_processor_kwargs": video_kwargs},
                 "sampling_params": sampling_params,
             }
         
@@ -231,6 +240,7 @@ class VtuberVLLM(VtuberLLMBase, _VLLMInterfaceMixin):
         super().__init__(config, logger)
         self.engine: Optional[LLM] = None
         self.tokenizer: Optional[Any] = None
+        self._is_vision_model: Optional[bool] = False
 
     @classmethod
     def load_model(cls, config: BaseModelConfig) -> "VtuberVLLM":
@@ -240,7 +250,12 @@ class VtuberVLLM(VtuberLLMBase, _VLLMInterfaceMixin):
             model=config.model_path_or_id,
             **config.model_init_kwargs
         )
-        instance.tokenizer = instance.engine.get_tokenizer()
+        if config.is_vision_model:
+            from transformers import AutoProcessor
+            instance._is_vision_model = True
+            instance.tokenizer = AutoProcessor.from_pretrained(config.model_path_or_id)
+        else:
+            instance.tokenizer = instance.engine.get_tokenizer()
 
         if config.uses_special_chat_template:
             instance.tokenizer.chat_template = get_special_template_for_model(config.model_path_or_id)
@@ -260,6 +275,7 @@ class VtuberVLLM(VtuberLLMBase, _VLLMInterfaceMixin):
         vllm_inputs = self._prepare_inputs(prompt, assistant_prompt, conversation_history, images,
             add_generation_prompt, continue_final_message, generation_config
         )
+
         outputs = self.engine.generate(vllm_inputs["prompt"], sampling_params=vllm_inputs["sampling_params"])
         return outputs[0].outputs[0].text
 
