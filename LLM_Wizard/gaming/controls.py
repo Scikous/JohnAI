@@ -1,6 +1,8 @@
 import logging
 import time
 from typing import Dict, Any
+from threading import Thread, Event
+from queue import Queue
 
 try:
     from evdev import UInput, ecodes as e
@@ -184,49 +186,106 @@ class InputController:
         self.ui.write(e.EV_KEY, key_code, 0); self.ui.syn()
 
 
-if __name__ == "__main__":
-    logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - %(levelname)s - [%(filename)s] %(message)s")
+# NEW: A thread-safe wrapper class for the controller
+class InputControllerThread:
+    """
+    Runs the InputController in a separate thread to prevent blocking
+    the main application. Actions are sent via a thread-safe queue.
+    """
+    def __init__(self):
+        self.action_queue = Queue()
+        self.controller = InputController()
+        self._stop_event = Event()
+        # A daemon thread will exit when the main program exits.
+        self.worker_thread = Thread(target=self._worker_loop, daemon=True)
+
+    def _worker_loop(self):
+        """The main loop for the consumer thread."""
+        logging.info("InputController worker thread started.")
+        while True:
+            # This will block until an item is available.
+            action = self.action_queue.get()
+            
+            # Use a sentinel value (None) to signal the thread to stop.
+            if action is None:
+                # self._stop_event.set()
+                break
+            
+            self.controller.execute_action(action)
+            self.action_queue.task_done()
+
+        self.controller.close()
+        logging.info("InputController worker thread stopped.")
+
+    def start(self):
+        """Starts the worker thread."""
+        self.worker_thread.start()
+    def is_alive(self):
+        return self.worker_thread.is_alive()
+
+    def stop(self):
+        """Stops the worker thread gracefully."""
+        logging.info("Requesting controller thread to stop.")
+        self._stop_event.set()
+        self.action_queue.put(None) # Send the sentinel
+        self.worker_thread.join()   # Wait for the thread to finish
+
+
+    def execute_action(self, action: Dict[str, Any]):
+        """
+        Public, non-blocking method to add an action to the queue.
+        """
+        self.action_queue.put(action)
+
+
+# if __name__ == "__main__":
+#     logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - %(levelname)s - [%(filename)s] %(message)s")
     
-    controller = None
-    try:
-        controller = InputController()
-        print("Controller initialized. The virtual cursor starts at screen center.")
-        print("Testing in 3 seconds... Please open a text editor to see the keyboard test.")
-        time.sleep(3)
-
-        # --- Mouse Test ---
-        print("--- Testing Mouse ---")
-        print(f"Moving to (300, 400)...")
-        controller.execute_action({"type": "mouse_move", "details": {"target_x": 300, "target_y": 400}})
-        time.sleep(1)
-        print(f"Clicking at current location...")
-        controller.execute_action({"type": "mouse_click", "details": {}})
-        time.sleep(1)
-
-        # --- Keyboard Test ---
-        print("\n--- Testing Keyboard ---")
-        print("Typing: 'hello'")
-        controller.execute_action({"type": "key_press", "details": {"key": "h"}})
-        controller.execute_action({"type": "key_press", "details": {"key": "e"}})
-        controller.execute_action({"type": "key_press", "details": {"key": "l"}})
-        controller.execute_action({"type": "key_press", "details": {"key": "l"}})
-        controller.execute_action({"type": "key_press", "details": {"key": "o"}})
-        time.sleep(1)
-
-        print("Typing: ' WORLD' (with shift modifier)")
-        controller.execute_action({"type": "key_press", "details": {"key": "space"}})
-        controller.execute_action({"type": "key_down", "details": {"key": "shift"}})
-        controller.execute_action({"type": "key_press", "details": {"key": "w"}})
-        controller.execute_action({"type": "key_press", "details": {"key": "o"}})
-        controller.execute_action({"type": "key_press", "details": {"key": "r"}})
-        controller.execute_action({"type": "key_press", "details": {"key": "l"}})
-        controller.execute_action({"type": "key_press", "details": {"key": "d"}})
-        controller.execute_action({"type": "key_up", "details": {"key": "shift"}})
+#     controller_thread = None
+#     try:
+#         # Use the new threaded controller
+#         controller_thread = InputControllerThread()
+#         controller_thread.start()
         
-        print("\nTests complete.")
+#         print("Threaded controller initialized. The virtual cursor starts at screen center.")
+#         print("Testing in 3 seconds... These commands will execute without blocking the main script.")
+#         print("Notice how the script prints messages instantly.")
+#         time.sleep(3)
 
-    except Exception as main_err:
-        logging.error(f"An error occurred during the test: {main_err}", exc_info=True)
-    finally:
-        if controller:
-            controller.close()
+#         # --- Mouse Test ---
+#         print("--- Testing Mouse ---")
+#         print("Queueing move to (300, 400)...")
+#         controller_thread.execute_action({"type": "mouse_move", "details": {"target_x": 300, "target_y": 400}})
+        
+#         print("Queueing a click...")
+#         # Note: we add a small delay in the main thread only if we want to see the actions visually separated.
+#         # The controller thread handles its own internal delays.
+#         time.sleep(1) 
+#         controller_thread.execute_action({"type": "mouse_click", "details": {}})
+        
+#         # --- Keyboard Test ---
+#         print("\n--- Testing Keyboard ---")
+#         print("Queueing 'hello'...")
+#         time.sleep(1)
+#         # We can now create helper functions to queue complex sequences
+#         for char in "hello":
+#             controller_thread.execute_action({"type": "key_press", "details": {"key": char}})
+
+#         print("Queueing ' WORLD' (with shift modifier)...")
+#         controller_thread.execute_action({"type": "key_press", "details": {"key": "space"}})
+#         controller_thread.execute_action({"type": "key_down", "details": {"key": "shift"}})
+#         for char in "world":
+#              controller_thread.execute_action({"type": "key_press", "details": {"key": char}})
+#         controller_thread.execute_action({"type": "key_up", "details": {"key": "shift"}})
+        
+#         print("\nAll actions queued. Main script can do other work now or wait.")
+#         # Wait for the queue to be empty before finishing
+#         controller_thread.action_queue.join()
+#         print("All queued actions have been executed.")
+
+#     except Exception as main_err:
+#         logging.error(f"An error occurred during the test: {main_err}", exc_info=True)
+#     finally:
+#         if controller_thread:
+#             controller_thread.stop()
+#         print("Script finished.")
