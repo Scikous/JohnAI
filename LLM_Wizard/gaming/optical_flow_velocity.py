@@ -320,43 +320,6 @@ if __name__ == "__main__":
 
     # agent.run_debug()
     time.sleep(5)
-    # try:
-    #     while True:
-    #         # A. Update Odometry (Eyes)
-    #         # This updates agent.world_position internally
-    #         vel, pos, frame = agent.get_game_state()
-            
-    #         if frame is None: continue
-            
-    #         # B. Update Navigation (Hands)
-    #         # This checks agent.world_position vs Target and presses keys
-    #         navigator.update()
-            
-    #         # C. Debug Visualization
-    #         if navigator.target_world_pos is not None:
-    #             # Draw a line from Player to Target (Visualized in Screen Space)
-    #             # We need to reverse the math: Screen = World - Player_World + Player_Screen
-    #             px, py, pw, ph = agent.player_bbox
-    #             player_screen_center = np.array([px+pw/2, py+ph/2])
-                
-    #             diff = navigator.target_world_pos - pos
-    #             target_screen_draw = player_screen_center + diff
-                
-    #             cv2.line(frame, 
-    #                      (int(player_screen_center[0]), int(player_screen_center[1])),
-    #                      (int(target_screen_draw[0]), int(target_screen_draw[1])),
-    #                      (255, 0, 255), 2)
-                         
-    #             cv2.circle(frame, (int(target_screen_draw[0]), int(target_screen_draw[1])), 
-    #                        10, (255, 0, 255), -1)
-
-    #         cv2.imshow("AI Vision", frame)
-    #         if cv2.waitKey(1) & 0xFF == ord('q'): break
-            
-    # finally:
-    #     navigator.stop_moving()
-    #     manager.stop_system()
-    #     cv2.destroyAllWindows()
 
     try:
         while True:
