@@ -5,24 +5,24 @@ from typing import Optional, List, Dict, Any
 from contextlib import asynccontextmanager
 import uvicorn
 from model_utils import load_character
-from models import VtuberExllamav2
+from models import JohnExllamav2
 
-# Global variable to hold the VtuberExllamav2 instance
-vtuber_model = None
+# Global variable to hold the JohnExllamav2 instance
+john_model = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan event handler for startup and shutdown"""
-    global vtuber_model
+    global john_model
     
     # Startup
     print("Starting up...")
     try:
-        # Initialize the VtuberExllamav2 model instance
+        # Initialize the JohnExllamav2 model instance
         character_info_json = "LLM_Wizard/characters/character.json"
         instructions, user_name, character_name = load_character(character_info_json)
 
-        vtuber_model = VtuberExllamav2.load_model(
+        john_model = JohnExllamav2.load_model(
             main_model="turboderp/Qwen2.5-VL-7B-Instruct-exl2",
             tokenizer_model="Qwen/Qwen2.5-VL-7B-Instruct",
             revision="8.0bpw",
@@ -32,14 +32,14 @@ async def lifespan(app: FastAPI):
         print("Model initialized successfully")
     except Exception as e:
         print(f"Error initializing model: {e}")
-        vtuber_model = None
+        john_model = None
     
     yield  # Application runs here
     
     # Shutdown
     print("Shutting down...")
-    if vtuber_model:
-        vtuber_model.cleanup()
+    if john_model:
+        john_model.cleanup()
         print("Model cleanup completed")
 
 # Pydantic models for request/response
@@ -54,7 +54,7 @@ class DialogueResponse(BaseModel):
 # Initialize FastAPI app with lifespan
 app = FastAPI(
     title="Dialogue Generator API",
-    description="API endpoint for VtuberExllamav2 dialogue generation",
+    description="API endpoint for JohnExllamav2 dialogue generation",
     version="1.0.0",
     lifespan=lifespan
 )
@@ -70,9 +70,9 @@ async def generate_dialogue_endpoint(request: DialogueRequest):
     Returns:
         DialogueResponse containing the result from dialogue_generator
     """
-    global vtuber_model
+    global john_model
     
-    if vtuber_model is None:
+    if john_model is None:
         raise HTTPException(status_code=500, detail="Model not initialized")
     
     try:
@@ -80,7 +80,7 @@ async def generate_dialogue_endpoint(request: DialogueRequest):
         async def stream_generator():
             try:
                 # The dialogue_generator returns an async job/generator
-                job = await vtuber_model.dialogue_generator(
+                job = await john_model.dialogue_generator(
                     prompt=request.prompt,
                     conversation_history=request.conversation_history,
                     max_tokens=request.max_tokens
@@ -112,13 +112,13 @@ async def cancel_dialogue_endpoint():
     Returns:
         Success message
     """
-    global vtuber_model
+    global john_model
     
-    if vtuber_model is None:
+    if john_model is None:
         raise HTTPException(status_code=500, detail="Model not initialized")
     
     try:
-        await vtuber_model.cancel_dialogue_generation()
+        await john_model.cancel_dialogue_generation()
         return {"message": "Dialogue generation cancelled successfully"}
         
     except Exception as e:
@@ -127,7 +127,7 @@ async def cancel_dialogue_endpoint():
 @app.get("/health")
 async def health_check():
     """Health check endpoint"""
-    return {"status": "healthy", "model_initialized": vtuber_model is not None}
+    return {"status": "healthy", "model_initialized": john_model is not None}
 
 if __name__ == "__main__":
     # Run the server

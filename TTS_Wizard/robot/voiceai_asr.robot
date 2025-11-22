@@ -8,7 +8,7 @@ Resource        utils.robot
 #http://localhost:9874/
 ${url}          http://localhost:9874/
 ${browser}      edge
-${input_folder_path}  C:/Users/Santa_/Documents/GithubRepos/Vtuber-AI/voiceAI/dataset/johnsmith/johnsmith
+${input_folder_path}  C:/Users/Santa_/Documents/GithubRepos/JohnAI/voiceAI/dataset/johnsmith/johnsmith
 ${ASR_model}  Faster Whisper (多语种)
 
 *** Test Cases ***

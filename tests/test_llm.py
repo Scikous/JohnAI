@@ -3,7 +3,7 @@ import asyncio
 from brain import stt_worker, live_chat_process, live_chat_worker, dialogue_worker, tts_worker
 from voiceAI.STT import speech_to_text
 
-from LLM.models import VtuberExllamav2, VtuberLLM
+from LLM.models import JohnExllamav2, JohnLLM
 
 from LLM.model_utils import LLMUtils
 from LLM.llm_templates import PromptTemplate as pt
@@ -69,7 +69,7 @@ def prompt_template(character_info):
 @pytest.fixture
 def exllama_model():
     model = "LLM/ALlama"
-    Character = VtuberExllamav2.load_model_exllamav2(model_dir=model, character_name="John")
+    Character = JohnExllamav2.load_model_exllamav2(model_dir=model, character_name="John")
     yield Character
     del Character #required to make space for other tests
 
@@ -92,7 +92,7 @@ def test_PromptTemplate_population(prompt_template):
 #model must be loadable
 @pytest.mark.run(order=3)
 def test_exllamav2_model_loading(exllama_model):
-    assert isinstance(exllama_model, VtuberExllamav2)
+    assert isinstance(exllama_model, JohnExllamav2)
 
 
 # test_model_loading()
@@ -100,7 +100,7 @@ def test_exllamav2_model_loading(exllama_model):
 @pytest.mark.run(order=4)
 def test_exllamav2(prompt_template, exllama_model):
     prompTemplate, bos_token, eos_token = prompt_template
-    Character = exllama_model#VtuberExllamav2.load_model_exllamav2(model_dir=model,character_name="John")#(generator, gen_settings, tokenizer, character_name)
+    Character = exllama_model#JohnExllamav2.load_model_exllamav2(model_dir=model,character_name="John")#(generator, gen_settings, tokenizer, character_name)
     #msg = "<|begin_of_text|>instructions: John Smith takes everything to an extreme. He dresses in outlandish and flamboyant clothing, often with theatricality. His speech is full of bombastic, grand and dramatic pronouncements. Everytime he speaks he says and responds ALWAYS with something NEW and UNIQUE EVERY SINGLE TIME. You will be penalized for saying anything present in this paragraph, and for not saying random unique things. He speaks of many fascinating topics.\n\n user message: Kid Flasher: Elon musk? You MUST have the following in your output EXACTLY as written, AND at least 2 sentences: "hello", 'wow't'"""
     msg = "Do you edge?"
     MAX_LATENCY = 2.00 #seconds

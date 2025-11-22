@@ -1,4 +1,4 @@
-from models import VtuberExllamav2, LLMModelConfig
+from models import JohnExllamav2, LLMModelConfig
 from huggingface_hub import snapshot_download
 from model_utils import load_character, prompt_wrapper, contains_sentence_terminator
 from time import perf_counter
@@ -30,9 +30,9 @@ async def exllamav2_test():
         instructions=instructions,
         is_vision_model=False
     )
-    # Character = VtuberExllamav2.load_model(config=model_config)#(generator, gen_settings, tokenizer, character_name)
+    # Character = JohnExllamav2.load_model(config=model_config)#(generator, gen_settings, tokenizer, character_name)
 
-    async with await VtuberExllamav2.load_model(config=model_config) as Character:
+    async with await JohnExllamav2.load_model(config=model_config) as Character:
         await asyncio.sleep(1)
         images = [
         # {"file": "media/test_image_1.jpg"},
@@ -52,10 +52,10 @@ async def exllamav2_test():
         
         start = perf_counter()
         prompt = prompt_wrapper("Bob: Describe the image shown", "Alice: You need brain surgery")
-        prompt = "Describe the image."
+        prompt = "The future of artificial intelligence is"#"Describe the image."
         #20ms+ for pure text, 60ms+ with maxed short-term-memory, 230-280ms+ with images (may be lower with smaller images, but also higher with different images)
         # response = await Character.dialogue_generator(prompt=prompt, conversation_history=dummy_memory, images=images, max_tokens=512)
-        response = await Character.dialogue_generator(prompt="How", conversation_history=None, images=None, max_tokens=512)
+        response = await Character.dialogue_generator(prompt=prompt, conversation_history=None, images=None, max_tokens=512)
         full_output = ""
         async for result in response:
             output = result.get("text", "")
@@ -71,6 +71,25 @@ async def exllamav2_test():
             # print(output,  end = "")    
                 # break
 
+        print(f"\n\nTime Taken (Seconds): {end-start}")
+        
+        start = perf_counter()
+
+        response = await Character.dialogue_generator(prompt="In a galaxy far, far away", conversation_history=None, images=None, max_tokens=512)
+        full_output = ""
+        async for result in response:
+            output = result.get("text", "")
+            end = perf_counter()
+            print(end-start)
+            full_output += output
+            # break
+            # if contains_sentence_terminator(output):
+            #     end = perf_counter()
+            #     print(end-start, output)
+            #     await Character.cancel_dialogue_generation()
+
+            # print(output,  end = "")    
+                # break
         # print(f"Prompts: {msg}\n\nRESPONSE:\n{response}\n\nTime Taken (Seconds): {end-start}")
         print(f"\n\nTime Taken (Seconds): {end-start}")
         print(full_output)

@@ -1,5 +1,5 @@
 """
-File Operations Utility for Vtuber-AI
+File Operations Utility for JohnAI
 Provides functions for reading and writing files, e.g., CSV logs.
 """
 import csv

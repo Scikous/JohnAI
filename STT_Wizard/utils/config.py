@@ -1,5 +1,5 @@
 """
-Configuration Loader for Vtuber-AI
+Configuration Loader for JohnAI
 Provides methods to load and access shared configuration settings.
 """
 import os

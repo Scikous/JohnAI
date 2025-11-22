@@ -1,24 +1,78 @@
+# import asyncio
+# import gc
+# import logging
+# from abc import ABC, abstractmethod
+# from dataclasses import dataclass
+# from typing import Any, Dict, List, Optional
+# import torch
+# from model_utils import apply_chat_template, get_image
+
+
+# # --- Configuration & Resource Objects ---
+# @dataclass
+# class LLMModelConfig:
+#     """Configuration for loading an Exllamav2 model."""
+#     main_model: str
+#     tokenizer_model: str
+#     revision: str = "8.0bpw"
+#     is_vision_model: bool = True
+#     max_seq_len: int = 65536
+#     character_name: str = 'assistant'
+#     instructions: str = ""
+
+# @dataclass
+# class Exllamav2Resources:
+#     """A container for all loaded Exllamav2 resources."""
+#     model: Any
+#     cache: Any
+#     exll2tokenizer: Any
+#     generator: Any
+#     gen_settings: Any
+#     tokenizer: Any  # Transformers tokenizer
+#     vision_model: Optional[Any] = None
+
+
 import asyncio
 import gc
 import logging
+import uuid
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
+
 import torch
 from model_utils import apply_chat_template, get_image
+
+# --- vLLM specific imports ---
+try:
+    from vllm import SamplingParams
+    from vllm.engine.arg_utils import AsyncEngineArgs
+    from vllm.engine.async_llm_engine import AsyncLLMEngine
+    from vllm.outputs import RequestOutput
+    from vllm.sampling_params import GuidedDecodingParams
+except ImportError:
+    print("Warning: vLLM is not installed. The JohnVLLM class will not be available.")
+    # Define dummy classes to avoid runtime errors if vLLM is not installed
+    AsyncLLMEngine = object
+    SamplingParams = object
+    GuidedDecodingParams = object
 
 
 # --- Configuration & Resource Objects ---
 @dataclass
 class LLMModelConfig:
-    """Configuration for loading an Exllamav2 model."""
+    """Configuration for loading a model."""
     main_model: str
     tokenizer_model: str
-    revision: str = "8.0bpw"
+    revision: str = "main"  # Use "main" as a more common default
     is_vision_model: bool = True
     max_seq_len: int = 65536
     character_name: str = 'assistant'
     instructions: str = ""
+    # vLLM specific config
+    tensor_parallel_size: int = 1
+    gpu_memory_utilization: float = 0.90
+
 
 @dataclass
 class Exllamav2Resources:
@@ -32,9 +86,18 @@ class Exllamav2Resources:
     vision_model: Optional[Any] = None
 
 
+@dataclass
+class VLLMResources:
+    """A container for all loaded vLLM resources."""
+    engine: AsyncLLMEngine
+    tokenizer: Any  # Transformers tokenizer
+
+
+
+
 # --- Base Class ---
-class VtuberLLMBase(ABC):
-    """Abstract base class for Vtuber LLM models."""
+class JohnLLMBase(ABC):
+    """Abstract base class for John LLM models."""
     logger = logging.getLogger(__name__)  # Default logger -- stupid but easier than having to refactor a bunch
 
     def __init__(self, character_name: str, instructions: str, logger: logging.Logger = None):
@@ -82,9 +145,9 @@ class VtuberLLMBase(ABC):
 
 
 #######
-class VtuberExllamav2(VtuberLLMBase):
+class JohnExllamav2(JohnLLMBase):
     """
-    Implementation of VtuberLLMBase using the ExllamaV2 library.
+    Implementation of JohnLLMBase using the ExllamaV2 library.
     """
     def __init__(self, config: LLMModelConfig, resources: Exllamav2Resources, logger: logging.Logger = None):
         super().__init__(config.character_name, config.instructions, logger)
@@ -143,7 +206,7 @@ class VtuberExllamav2(VtuberLLMBase):
         instance = cls(config, loaded_resources)
 
         # 7. Perform warmup on the new instance
-        await instance.warmup()
+        # await instance.warmup()
 
         return instance
 
@@ -155,8 +218,8 @@ class VtuberExllamav2(VtuberLLMBase):
 
         if self.resources.vision_model and images:
             # Concurrently fetch and embed all images
-            image_tasks = [get_image(**img_args) for img_args in images]
-            loaded_images = await asyncio.gather(*image_tasks)
+            # image_tasks = images#[get_image(**img_args) for img_args in images]
+            loaded_images = images#await asyncio.gather(*image_tasks)
             
             image_embeddings = [
                 self.resources.vision_model.get_image_embeddings(
@@ -301,3 +364,182 @@ class VtuberExllamav2(VtuberLLMBase):
             torch.cuda.empty_cache()
         gc.collect()
         self.logger.info("Cleaned up ExllamaV2 model resources.")
+
+
+
+#######
+# --- NEW VLLM IMPLEMENTATION ---
+#######
+class JohnVLLM(JohnLLMBase):
+    """
+    Implementation of JohnLLMBase using the vLLM library.
+    """
+    def __init__(self, config: LLMModelConfig, resources: VLLMResources, logger: logging.Logger = None):
+        super().__init__(config.character_name, config.instructions, logger)
+        self.config = config
+        self.resources = resources
+        # Use the job reference to store the vLLM request ID for cancellation
+        self.current_async_job: Optional[str] = None
+
+    @classmethod
+    async def load_model(cls, config: LLMModelConfig):
+        """
+        Loads a vLLM model based on the provided configuration.
+        """
+        from transformers import AutoTokenizer
+
+        cls.logger.info(f"Initializing vLLM engine for model: {config.main_model}")
+
+        # 1. Configure and initialize the AsyncLLM engine
+        engine_args = AsyncEngineArgs(
+            model=config.main_model,
+            revision=config.revision,
+            tokenizer=config.tokenizer_model,
+            trust_remote_code=True,
+            max_model_len=config.max_seq_len,
+            tensor_parallel_size=config.tensor_parallel_size,
+            gpu_memory_utilization=config.gpu_memory_utilization,
+            # For vision models, vLLM needs to know to load the image encoder
+            enable_lora=config.is_vision_model,
+        )
+        engine = AsyncLLMEngine.from_engine_args(engine_args)
+
+        # 2. Load Transformers Tokenizer (for chat template)
+        hf_tokenizer = AutoTokenizer.from_pretrained(config.tokenizer_model)
+
+        # 3. Group resources and instantiate the class
+        loaded_resources = VLLMResources(engine=engine, tokenizer=hf_tokenizer)
+        instance = cls(config, loaded_resources)
+        
+        return instance
+
+    async def _prepare_prompt_and_data(self, prompt: str, assistant_prompt: Optional[str], conversation_history: Optional[List[str]]=None, images: Optional[List[Dict]]=None,
+                                       add_generation_prompt: bool = True, continue_final_message: bool = False):
+        """Handles image loading and chat template application for vLLM."""
+        multi_modal_data = None
+        placeholders = ""
+
+        if self.config.is_vision_model and images:
+            # vLLM expects <image> placeholders in the text and image data passed separately.
+            placeholders = "<image>" * len(images) + "\n"
+            
+            # Concurrently fetch all images
+            image_tasks = [get_image(**img_args) for img_args in images]
+            loaded_images = await asyncio.gather(*image_tasks)
+            multi_modal_data = {"image": loaded_images}
+
+        full_prompt = placeholders + prompt
+        formatted_prompt = apply_chat_template(
+            instructions=self.instructions,
+            prompt=full_prompt,
+            assistant_prompt=assistant_prompt,
+            conversation_history=conversation_history,
+            tokenizer=self.resources.tokenizer,
+            tokenize=False,
+            add_generation_prompt=add_generation_prompt,
+            continue_final_message=continue_final_message,
+        )
+        
+        return formatted_prompt, multi_modal_data
+
+    async def dialogue_generator(self, prompt: str, assistant_prompt: Optional[str]=None, conversation_history: Optional[List[str]] = None, images: Optional[List[Dict]] = None, max_tokens: int = 200, add_generation_prompt: bool = True, continue_final_message: bool = False, json_schema: Optional[Dict] = None):
+        """
+        Generates character's response asynchronously using vLLM's streaming engine.
+        
+        Args:
+            ... (same as base class) ...
+            json_schema: Optional Pydantic-style JSON schema for guided decoding.
+        """
+        formatted_prompt, multi_modal_data = await self._prepare_prompt_and_data(
+            prompt, assistant_prompt, conversation_history, images, add_generation_prompt, continue_final_message
+        )
+
+        # Configure sampling parameters
+        guided_params = None
+        if json_schema:
+            self.logger.info("Applying guided JSON decoding.")
+            guided_params = GuidedDecodingParams(json_schema=json_schema)
+
+        sampling_params = SamplingParams(
+            temperature=0.8, top_p=0.95, max_tokens=max_tokens,
+            stop_token_ids=[self.resources.tokenizer.eos_token_id],
+            guided_decoding_params=guided_params,
+        )
+
+        # Generate a unique ID for this request
+        request_id = f"john-llm-{uuid.uuid4()}"
+        self.current_async_job = request_id
+
+        # Get the async generator from the vLLM engine
+        results_generator = self.resources.engine.generate(
+            prompt=formatted_prompt,
+            sampling_params=sampling_params,
+            request_id=request_id,
+            multi_modal_data=multi_modal_data
+        )
+
+        # Stream the results
+        try:
+            async for request_output in results_generator:
+                # In streaming, the new text is the difference from the previous output
+                # For simplicity and robustness, we'll yield the full text of the first completion
+                yield request_output.outputs[0].text
+            
+            # Final check to yield the complete text if anything was missed
+            final_output: RequestOutput = request_output
+            yield final_output.outputs[0].text
+
+        except asyncio.CancelledError:
+            self.logger.info(f"Dialogue generation for request {request_id} was cancelled.")
+            # The cancellation is handled by the calling context, which should also call cancel_dialogue_generation
+        finally:
+            # Clean up the job reference once generation is complete or cancelled
+            if self.current_async_job == request_id:
+                self.current_async_job = None
+
+    async def cancel_dialogue_generation(self):
+        """Aborts the currently ongoing vLLM request."""
+        if self.current_async_job:
+            request_id = self.current_async_job
+            self.logger.info(f"Cancelling current dialogue generation job: {request_id}")
+            await self.resources.engine.abort(request_id)
+            self.current_async_job = None # Clear immediately
+        else:
+            self.logger.warning("No active dialogue generation job to cancel.")
+
+    async def warmup(self):
+        """Warms up the vLLM engine by running a short, dummy generation."""
+        self.logger.info("Warming up the vLLM engine... (This may take a moment)")
+        try:
+            warmup_prompt = "Hello, world. This is a test to warm up the model."
+            images = None
+            if self.config.is_vision_model:
+                 images = [{"url": "https://images.fineartamerica.com/images-medium-large-5/metal-household-objects-trevor-clifford-photography.jpg"}]
+
+            # Use the generator and iterate through it to completion
+            warmup_stream = self.dialogue_generator(
+                prompt=warmup_prompt,
+                images=images,
+                max_tokens=10
+            )
+            async for _ in warmup_stream:
+                pass
+            
+            self.logger.info("vLLM engine warmup complete. Model is ready.")
+        except Exception as e:
+            self.logger.error(f"An error occurred during vLLM warmup: {e}", exc_info=True)
+
+    async def cleanup(self):
+        """Cleans up vLLM resources."""
+        if self.current_async_job:
+            self.logger.info("Attempting to cancel ongoing async_job during cleanup...")
+            await self.cancel_dialogue_generation()
+
+        # vLLM's engine doesn't have an explicit async shutdown method.
+        # Aborting requests and releasing the reference is the primary cleanup.
+        self.resources = None
+        
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        gc.collect()
+        self.logger.info("Cleaned up vLLM model resources.")

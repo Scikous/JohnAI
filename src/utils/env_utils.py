@@ -1,5 +1,5 @@
 """
-Environment Variable Utility for Vtuber-AI
+Environment Variable Utility for JohnAI
 Provides functions for fetching environment variables.
 """
 import dotenv

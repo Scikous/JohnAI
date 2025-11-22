@@ -71,12 +71,12 @@ def get_python_executable(venv_name):
 
 def main():
     """
-    Main function to start the Vtuber-AI application by running the MainOrchestrator,
+    Main function to start the JohnAI application by running the MainOrchestrator,
     and the TTS service by running the api_v2.py script.
     """
-    print("Starting Vtuber-AI application and TTS service...")
+    print("Starting JohnAI application and TTS service...")
 
-    # Prepare the command for the Vtuber-AI multiprocess orchestrator
+    # Prepare the command for the JohnAI multiprocess orchestrator
     python_executable_ai = get_python_executable(VENV_NAME_AI)
     multiprocess_orchestrator_script = os.path.join(PROJECT_ROOT, "src", "process_orchestrator.py")
 
@@ -222,7 +222,7 @@ def main():
             else:
                 print(f"{name} process (PID: {proc.pid}) already finished (return code: {proc.returncode}).")
 
-        print("Vtuber-AI application and TTS service cleanup finished.")
+        print("JohnAI application and TTS service cleanup finished.")
 
 if __name__ == "__main__":
     main()

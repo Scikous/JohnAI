@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 import uvicorn
 from livechat import LiveChatController
 
-# Global variable to hold the VtuberExllamav2 instance
+# Global variable to hold the JohnExllamav2 instance
 live_chat_controller = None
 
 @asynccontextmanager

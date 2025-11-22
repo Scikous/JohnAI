@@ -1,5 +1,5 @@
 """
-Logger Utility for Vtuber-AI
+Logger Utility for John-AI
 Provides a centralized, process-safe logger for the application.
 """
 import logging

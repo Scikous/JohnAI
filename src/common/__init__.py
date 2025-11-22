@@ -1,4 +1,4 @@
 """
-Common package for Vtuber-AI
+Common package for JohnAI
 Place shared resources here.
 """

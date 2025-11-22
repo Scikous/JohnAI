@@ -1,4 +1,4 @@
 """
-Utilities package for Vtuber-AI
+Utilities package for JohnAI
 Place shared utility functions here.
 """
