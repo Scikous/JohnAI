@@ -13,18 +13,27 @@
 
     "llm_settings":
     {
-        "llm_class_name": "VtuberExllamav2",
-        "llm_model_path": "turboderp/Qwen2.5-VL-7B-Instruct-exl2",
-        "tokenizer_model_path": "Qwen/Qwen2.5-VL-7B-Instruct",
-        "llm_model_revision": "8.0bpw",
+        "backend": "vllm",
+        "llm_model_path": "Qwen/Qwen3-VL-8B-Instruct-FP8",
+        "model_init_kwargs": {
+            "gpu_memory_utilization": 0.90,
+            "max_model_len": 8000,
+            "trust_remote_code": true
+        },
+        "is_vision_model": true,
         "conversation_history_maxlen": 12,
-        "max_tokens": 512,
+        "max_tokens": 1028,
+        "temperature": 0.2,
+        "top_p": 1.0,
+        "top_k": -1,
+        "repetition_penalty": 1.0,
+        "enable_thinking": false,
         "character_info_json": "LLM_Wizard/characters/character.json"
     },
 
     "context_llm_settings":
     {
-        "context_llm_class_name": "VtuberExllamav2",
+        "context_llm_class_name": "JohnExllamav2",
         "context_llm_model_path": "HuggingFaceTB/SmolLM2-135M-Instruct",
         "context_llm_model_revision": "main",
         "context_llm_tokenizer_model_path": "HuggingFaceTB/SmolLM2-135M-Instruct",

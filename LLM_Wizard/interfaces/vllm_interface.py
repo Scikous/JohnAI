@@ -15,7 +15,7 @@ from LLM_Wizard.utils.special_chat_templates import get_special_template_for_mod
 import torch
 from model_utils import apply_chat_template
 
-from .base import BaseModelConfig, VtuberLLMAsyncBase, VtuberLLMBase
+from LLM_Wizard.interfaces.base import BaseModelConfig, JohnLLMAsyncBase, JohnLLMBase
 
 
 class _VLLMInterfaceMixin:
@@ -156,8 +156,9 @@ Returns:
 """
 
 # --- Asynchronous vLLM Implementation ---
-class VtuberVLLMAsync(VtuberLLMAsyncBase, _VLLMInterfaceMixin):
-    """Asynchronous implementation of VtuberLLMBase using vLLM's AsyncLLM."""
+
+class JohnVLLMAsync(JohnLLMAsyncBase, _VLLMInterfaceMixin):
+    """Asynchronous implementation of JohnLLMBase using vLLM."""
 
     def __init__(self, config: BaseModelConfig, logger: Optional[logging.Logger] = None):
         super().__init__(config, logger)
@@ -165,16 +166,17 @@ class VtuberVLLMAsync(VtuberLLMAsyncBase, _VLLMInterfaceMixin):
         self.tokenizer: Optional[Any] = None
         self.current_request_id: Optional[str] = None
 
-    #needs to be async
     @classmethod
-    async def load_model(cls, config: BaseModelConfig) -> "VtuberVLLMAsync":
+    async def load_model(cls, config: BaseModelConfig) -> "JohnVLLMAsync":
         instance = cls(config)
         instance.logger.info(f"Initializing vLLM AsyncLLM for model: {config.model_path_or_id}")
-        engine_args = AsyncEngineArgs(
-        model="HuggingFaceTB/SmolLM2-135M-Instruct",
-        trust_remote_code=True,
-        **config.model_init_kwargs
-        )
+        
+        engine_args_dict = {
+            "model": config.model_path_or_id,
+        }
+        engine_args_dict.update(config.model_init_kwargs)
+        
+        engine_args = AsyncEngineArgs(**engine_args_dict)
         instance.engine = AsyncLLM.from_engine_args(engine_args)
         instance.tokenizer = await instance.engine.get_tokenizer()
         return instance
@@ -192,30 +194,41 @@ class VtuberVLLMAsync(VtuberLLMAsyncBase, _VLLMInterfaceMixin):
         vllm_inputs = self._prepare_inputs(prompt, assistant_prompt, conversation_history, images,
             add_generation_prompt, continue_final_message, generation_config
         )
-        self.current_request_id = f"vtuber-llm-{uuid.uuid4().hex}"
+        self.current_request_id = f"john-llm-{uuid.uuid4().hex}"
         
-        results_generator = self.engine.generate(vllm_inputs["prompt"], sampling_params=vllm_inputs["sampling_params"], request_id=self.current_request_id)
+        results_generator = self.engine.generate(
+            vllm_inputs["prompt"], 
+            sampling_params=vllm_inputs["sampling_params"], 
+            request_id=self.current_request_id
+        )
+        
+        previous_text = ""
         async for request_output in results_generator:
-            new_text = request_output.outputs[0].text
-            yield new_text
+            # vLLM yields cumulative text in outputs[0].text
+            current_text = request_output.outputs[0].text
+            
+            # Calculate delta to behave like a stream of tokens
+            if len(current_text) > len(previous_text):
+                new_token = current_text[len(previous_text):]
+                previous_text = current_text
+                yield new_token
+            
         self.current_request_id = None
-
-    # Set the docstring dynamically
-    dialogue_generator.__doc__ = _DIALOGUE_GENERATOR_DOCSTRING.format(
-        return_type="AsyncGenerator[str, None]",
-        return_description="An asynchronous generator that yields text chunks as they are generated."
-    )
 
     async def cancel_dialogue_generation(self):
         if self.current_request_id:
-            await self.engine.abort(self.current_request_id)
-            self.logger.info(f"Aborted vLLM request: {self.current_request_id}")
+            try:
+                await self.engine.abort(self.current_request_id)
+                self.logger.info(f"Aborted vLLM request: {self.current_request_id}")
+            except Exception as e:
+                self.logger.warning(f"Failed to abort vLLM request: {e}")
             self.current_request_id = None
 
     async def warmup(self):
         self.logger.info("Warming up the async vLLM engine...")
         try:
-            async for _ in self.dialogue_generator(prompt="Hello"):
+            gen_config = {"max_tokens": 10}
+            async for _ in self.dialogue_generator(prompt="Hello", generation_config=gen_config):
                 pass
             self.logger.info("Async vLLM engine warmup complete.")
         except Exception as e:
@@ -224,8 +237,9 @@ class VtuberVLLMAsync(VtuberLLMAsyncBase, _VLLMInterfaceMixin):
     async def cleanup(self):
         if self.current_request_id:
             await self.cancel_dialogue_generation()
-        self.engine.shutdown()
-        del self.engine
+        # Explicitly delete engine to free memory
+        if self.engine:
+            del self.engine
         self.engine = self.tokenizer = None
         gc.collect()
         if torch.cuda.is_available():
@@ -233,8 +247,8 @@ class VtuberVLLMAsync(VtuberLLMAsyncBase, _VLLMInterfaceMixin):
         self.logger.info("Cleaned up async vLLM resources.")
 
 # --- Synchronous vLLM Implementation ---
-class VtuberVLLM(VtuberLLMBase, _VLLMInterfaceMixin):
-    """Synchronous implementation of VtuberLLMBase using vLLM's LLM."""
+class JohnVLLM(JohnLLMBase, _VLLMInterfaceMixin):
+    """Synchronous implementation of JohnLLMBase using vLLM's LLM."""
 
     def __init__(self, config: BaseModelConfig, logger: Optional[logging.Logger] = None):
         super().__init__(config, logger)
@@ -243,7 +257,7 @@ class VtuberVLLM(VtuberLLMBase, _VLLMInterfaceMixin):
         self._is_vision_model: Optional[bool] = False
 
     @classmethod
-    def load_model(cls, config: BaseModelConfig) -> "VtuberVLLM":
+    def load_model(cls, config: BaseModelConfig) -> "JohnVLLM":
         instance = cls(config)
         instance.logger.info(f"Initializing vLLM LLM for model: {config.model_path_or_id}")
         instance.engine = LLM(
