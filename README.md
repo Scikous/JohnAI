@@ -1,9 +1,9 @@
-# Vtuber-AI
-The aim of this project is both to give a good starting point for anyone to create their own custom AI Vtubers (technically won't have to be a Vtuber), and be something fun for me to build and potentially have my work live on and be incorporated into numerous other projects for a long time to come.
+# JohnAI
+The aim of this project is both to give a good starting point for anyone to create their own custom AI Johns (technically won't have to be a John), and be something fun for me to build and potentially have my work live on and be incorporated into numerous other projects for a long time to come.
 
 ## Table of Contents
 
-* [Vtuber-AI](#vtuber-ai)
+* [JohnAI](#johnai)
     * [Features](#features)
     * [Todo List](#todo-list)
 * [Setup](#setup)
@@ -29,88 +29,40 @@ The aim of this project is both to give a good starting point for anyone to crea
 * [Testing](#testing)
 * [Acknowledgements](#acknowledgements)
 
-# Features
-* Fine-tune an LLM
-* Train and use a custom voice model for TTS (see acknowledgements)
+# Features -- WIP
 * Speak to your LLM using STT (see acknowledgements)
 
-  **Features:**
-  - [X] Create a function to create a dataset for LLM training from a .csv file
-  - [ ] Send audio data to Discord or other, so anyone in call can hear
-  - [X] Support for receiving and responding to YouTube live chat messages
-  - [X] Support for receiving and responding to Twitch live chat messages
-  - [X] Support for receiving and responding to YouTube live chat messages
-  - [X] Support for receiving and responding to Twitch live chat messages
-  - [ ] Support for receiving and responding to Kick live chat messages
-  - [ ] Boolean for automatically stopping the model from speaking when user speaks at the same time
-  - [ ] On screen subtitles for OBS
-  - [ ] As LLM generates text, receive it and use TTS to speak it aloud for potentially better real-time conversation
-  - [ ] Vision capabilities, see what is on screen and commentate on it
-  - [ ] Gaming capabilities, play different types of games
-  - [ ] Vtuber model capabilities, movement, expressions and lipsync, etc
-  - [ ] RAG for enhanced conversational cohesion
-  - [ ] Recognition of separate speakers
-  - [ ] run LLM and TTS on separate threads (benefits?)
-
-  **Unsure Features:**
-  - [ ] Drawing capability?
-  - [ ] Singing capability?
-  - [ ] Vector database for improved RAG?
-  - [ ] Different/Custom STT?
-
-
 # Setup
-This is developed and tested on Python 3.12.3.
+This is developed and tested on Python 3.12.3. Ubuntu 24.04 LTS on Wayland with an NVIDIA GPU.
 
-## installation
-
+## Installation
 :exclamation: This mainly works on Linux (Ubuntu 24.04 LTS, other distros may work). Direct Windows support has been dropped -- only works through WSL2 OR available in the Windows-legacy branch (heavily out-of-date but technically functional-ish).
 
-[flash-attention](https://github.com/Dao-AILab/flash-attention) is required (used by ExllamaV2).
-
-PyTorch 2.7.1 (assumes you are using CudaToolkit 12.8)
-```
-pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
-```
-
-[ExllamaV2](https://github.com/turboderp/exllamav2) 
-:information_source: Assumes Pytorch 2.7.1, CudaToolkit 12.8, Python 3.12
-
-```
-https://github.com/turboderp-org/exllamav2/releases/download/v0.3.1/exllamav2-0.3.1+cu128.torch2.7.0-cp312-cp312-linux_x86_64.whl
-```
-
-
-may need to install -- unlikely, haven't had to do this in recent venv builds:
-```
-python -m nltk.downloader averaged_perceptron_tagger_eng
-```
-
-## Virtual Environments
-The virtual environment simply helps to avoid package conflicts. Do note that this will take more space in the storage as each environment is its own.
-
-Create env (the last `venv` is the folder name/path where the venv will be created):
-
-```
- python3 -m venv venvRun
-```
-
-Activate env:
-```
-source venv/bin/activate
-```
-
-Deactivate env:
-```
-deactivate
-```
 
 # Quick Start
 :exclamation: Heavy WIP
 
+```
+uv venv --python 3.12 --seed --system-site-packages
+source .venv/bin/activate
+```
+
+```
+uv pip install poetry
+poetry config virtualenvs.in-project true
+poetry install
+```
+
+:warning: Assumes you're using CUDA 12.8
+```
+uv pip install -U vllm \
+    --torch-backend=cu128 \
+    --extra-index-url https://wheels.vllm.ai/nightly
+```
+
 After activating the venv, run the following in the root directory:
 ```
-python -m run
+python -m src.process_orchestrator
 ```
 
 :information_source: The next sub-sections are purely optional, only necessary if you want the AI to interact with livechat on YouTube/Twitch/Kick.
