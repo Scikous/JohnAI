@@ -183,7 +183,7 @@ class JohnVLLMAsync(JohnLLMAsyncBase, _VLLMInterfaceMixin):
 
     @staticmethod
     def _get_output_kind(output_kind_str: str) -> RequestOutputKind:
-        if not output_kind_str:
+        if not output_kind_str or output_kind_str.upper() == "CUMULATIVE":
             return RequestOutputKind.CUMULATIVE
         if output_kind_str.upper() == "DELTA":
             return RequestOutputKind.DELTA
