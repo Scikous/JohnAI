@@ -27,6 +27,7 @@
         "top_p": 1.0,
         "top_k": -1,
         "repetition_penalty": 1.0,
+        "output_kind": "DELTA",
         "enable_thinking": false,
         "character_info_json": "LLM_Wizard/characters/character.json"
     },

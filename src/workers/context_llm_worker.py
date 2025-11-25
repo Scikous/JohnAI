@@ -4,7 +4,7 @@ from src.utils.env_utils import setup_project_root
 from src.utils import logger as app_logger
 from src.common import config as app_config
 from src.utils.performance_utils import apply_system_optimizations, async_check_gpu_memory
-from LLM_Wizard.models import LLMModelConfig, VtuberExllamav2
+from LLM_Wizard.models import LLMModelConfig, JohnExllamav2
 from Livechat_Wizard.data_models import UnifiedMessage # Assuming data_models.py is accessible from the project root
 
 app_logger.setup_logging()
@@ -35,7 +35,7 @@ async def context_runner(shutdown_event, stt_stream_queue, llm_control_queue, li
     )
     max_tokens = context_settings.get("context_llm_max_tokens")
 
-    async with await VtuberExllamav2.load_model(config=model_config) as context_model:
+    async with await JohnExllamav2.load_model(config=model_config) as context_model:
         logger.info("✅ Context LLM model loaded.")
         
         initial_prompt = None
@@ -125,7 +125,7 @@ async def context_runner(shutdown_event, stt_stream_queue, llm_control_queue, li
 
 async def process_chat_message(
     payload: dict, # Expects {"winner": UnifiedMessage, "context": list[UnifiedMessage]}
-    context_model: VtuberExllamav2,
+    context_model: JohnExllamav2,
     moderation_prompt_template: str,
     assistant_prompt_template: str,
     llm_control_queue: mp.Queue,

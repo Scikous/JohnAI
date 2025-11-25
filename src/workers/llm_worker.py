@@ -106,6 +106,7 @@ async def llm_runner(shutdown_event, llm_control_queue, llm_to_tts_queue, gpu_re
                             "top_p": llm_settings.get("top_p", 1.0),
                             "top_k": llm_settings.get("top_k", -1),
                             "repetition_penalty": llm_settings.get("repetition_penalty", 1.0),
+                            "output_kind": llm_settings.get("output_kind", None),
                             # Guided decoding or other complex params can be added here
                         }
                         try:
