@@ -4,7 +4,7 @@ import uuid
 from typing import Any, Dict, List, Optional, AsyncGenerator, Union
 
 from vllm import LLM, SamplingParams
-from vllm.sampling_params import StructuredOutputsParams#, StructuredOutputsParams
+from vllm.sampling_params import StructuredOutputsParams, RequestOutputKind#, StructuredOutputsParams
 from vllm.engine.arg_utils import AsyncEngineArgs
 from vllm.v1.engine.async_llm import AsyncLLM
 
@@ -181,6 +181,13 @@ class JohnVLLMAsync(JohnLLMAsyncBase, _VLLMInterfaceMixin):
         instance.tokenizer = await instance.engine.get_tokenizer()
         return instance
 
+    @staticmethod
+    def _get_output_kind(output_kind_str: str) -> RequestOutputKind:
+        if not output_kind_str:
+            return RequestOutputKind.CUMULATIVE
+        if output_kind_str.upper() == "DELTA":
+            return RequestOutputKind.DELTA
+
     async def dialogue_generator(self,
                              prompt: str,
                              assistant_prompt: Optional[str] = None,
@@ -190,29 +197,25 @@ class JohnVLLMAsync(JohnLLMAsyncBase, _VLLMInterfaceMixin):
                              continue_final_message: bool = False,
                              generation_config: Optional[Dict[str, Any]] = None
                              ) -> AsyncGenerator[str, None]:
+        #add the output kind DELTA to only receive the new text
+        generation_config["output_kind"] = self._get_output_kind(generation_config["output_kind"])
         
         vllm_inputs = self._prepare_inputs(prompt, assistant_prompt, conversation_history, images,
             add_generation_prompt, continue_final_message, generation_config
         )
         self.current_request_id = f"john-llm-{uuid.uuid4().hex}"
         
+        # vllm_inputs["sampling_params"]
         results_generator = self.engine.generate(
             vllm_inputs["prompt"], 
             sampling_params=vllm_inputs["sampling_params"], 
             request_id=self.current_request_id
         )
         
-        previous_text = ""
         async for request_output in results_generator:
             # vLLM yields cumulative text in outputs[0].text
             current_text = request_output.outputs[0].text
-            
-            # Calculate delta to behave like a stream of tokens
-            if len(current_text) > len(previous_text):
-                new_token = current_text[len(previous_text):]
-                previous_text = current_text
-                yield new_token
-            
+            yield current_text
         self.current_request_id = None
 
     async def cancel_dialogue_generation(self):
