@@ -1,90 +1,11 @@
-# from vllm import LLM, SamplingParams
-# from vllm.sampling_params import GuidedDecodingParams
-# from pydantic import BaseModel, Field, field_validator, AfterValidator
-# from interfaces.vllm_interface import JohnVLLM
-# from interfaces.base import BaseModelConfig
-# from typing import List, Literal, Annotated, Optional
+from pydantic import BaseModel, Field, field_validator, AfterValidator
+from interfaces.vllm_interface import JohnVLLM
+from interfaces.base import BaseModelConfig
+from typing import List, Literal, Annotated, Optional
+from PIL import Image
+import json
 
-# # def action_in_options(v, values):
-# #     options = values.data.get('menu_options')
-# #     raise ValueError(f"Action '{v}' is not one of the valid options: {options}")
-# #     if (options and v not in options):
-# #         pass
-# #     return v
-
-# #to be menu options based schema
-# class Info(BaseModel):
-#     menu_layout: str
-#     menu_options: List[str]
-#     selected_option: str
-
-# #to be dialogue options based schema
-# class Dialogue(BaseModel):
-#     """
-#     Represents the state of an in-game dialogue box.
-#     """
-#     is_dialogue_active: bool = Field(
-#         ..., 
-#         description="Is a dialogue box currently visible on the screen?"
-#     )
-#     speaker_name: Optional[str] = Field(
-#         None, 
-#         description="The name of the character currently speaking. Null if no speaker is shown."
-#     )
-#     dialogue_text: Optional[str] = Field(
-#         None, 
-#         description="The full text content currently visible in the dialogue box."
-#     )
-#     has_more_text_indicator: bool = Field(
-#         False, 
-#         description="True if there is a visual cue (e.g., a blinking cursor, an arrow) indicating more text will appear."
-#     )
-#     player_choices: List[str]
-#     selected_choice: Optional[str] = Field(
-#         None,
-#         description="The currently highlighted player choice. Null if no choices are present."
-#     )
-#     menu_layout: Optional[str]
-
-# class Movement(BaseModel):
-#     pass
-
-
-# ##create combat options based schema
-# class Combat(BaseModel):
-#     menu_layout: str
-#     menu_options: List[str]
-#     selected_option: str
-# # #change based on personal needs
-# # model_init_kwargs = {
-# #     "gpu_memory_utilization": 0.95,
-# #     "max_model_len": 49152
-# #     }
-# # config = BaseModelConfig(model_init_kwargs=model_init_kwargs)
-# # l = JohnVLLM(config).load_model(config)
-
-# def image_resizer():
-#     pass # TODO -- images MUST BE 1024x1024 for functional results.
-
-
-
-# #zai-org/GLM-4.1V-9B-Thinking
-# model_init_kwargs = {"gpu_memory_utilization": 0.93, "max_model_len": 8000, "trust_remote_code": True,
-#     }
-# model_config = BaseModelConfig(model_path_or_id="Qwen/Qwen3-VL-8B-Instruct-FP8", is_vision_model=True, uses_special_chat_template=False, model_init_kwargs=model_init_kwargs)
-# llm = JohnVLLM(model_config).load_model(model_config)
-
-# #use for async streaming only
-# # from vllm.sampling_params import RequestOutputKind
-# # "output_kind": RequestOutputKind.DELTA,
-
-
-# from PIL import Image
-# import json
-## images = [Image.open("LLM_Wizard/gaming/nier.webp")]#[Image.open("LLM_Wizard/gaming/nier.webp"), Image.open("LLM_Wizard/gaming/nier.webp")]
-# # # resp = l.dialogue_generator("Generate a new person:", generation_config=guided_json_config)
-
-# #Paper Lily -- only a testing temp one
+#Paper Lily -- only a testing temp one
 # control_schema ={
 #     "move_up": "moves the player forward or moves selection up",
 #     "move_down": "moves the player down/backwards or moves selection down",
@@ -95,145 +16,59 @@
 
 # }
 
-# # #Adventure, RPG,etc. -- other types as well
-# # control_schema ={
+def dummy_keyboard(action, action_repeat):
+    return f"{action} {action_repeat} times"
 
-# # }
+def dummy_controller(cur_action_index, next_action_index, layout):
+    index_diff = cur_action_index - next_action_index
+    repeat_action_times = abs(index_diff)
 
+    if repeat_action_times == 0:
+        return dummy_keyboard("interact", 1)
+    elif layout == "horizontal":
+        action_direction = "move_left" if index_diff > 0 else "move_right"
+        return dummy_keyboard(action_direction, repeat_action_times)
+    elif layout == "vertical":
+        action_direction = "move_up" if index_diff > 0 else "move_down"        
+        return dummy_keyboard(action_direction, repeat_action_times)
 
-# def dummy_keyboard(action, action_repeat):
-#     return f"{action} {action_repeat} times"
-
-# def dummy_controller(cur_action_index, next_action_index, layout):
-#     index_diff = cur_action_index - next_action_index
-#     repeat_action_times = abs(index_diff)
-
-#     if repeat_action_times == 0:
-#         return dummy_keyboard("interact", 1)
-#     elif layout == "horizontal":
-#         action_direction = "move_left" if index_diff > 0 else "move_right"
-#         return dummy_keyboard(action_direction, repeat_action_times)
-#     elif layout == "vertical":
-#         action_direction = "move_up" if index_diff > 0 else "move_down"        
-#         return dummy_keyboard(action_direction, repeat_action_times)
-
-# # def dummy_controller_super(act_options, current_option=None, selected_option=None, layout=None):
+ass_p = "{\n"
+def analyze_game_info(prompt, images, schema):
     
-# #     if current_option is None:
+    guided_json_config = {
+        "max_tokens": 1028,
+        "temperature": 0.2,
+        # "enable_thinking": False
+        "skip_special_tokens": False,
+        "guided_decoding": {
+            "json": schema  # The key 'json' specifies the type
+        }
+    }
 
-# #     cur_action_index = act_options.index(current_option)
-# #     next_action_index = act_options.index(selected_option)
-# #     repeat_action_times = abs(cur_action_index-next_action_index)
+    resp = llm.dialogue_generator(prompt=prompt, assistant_prompt=ass_p, images=images, generation_config=guided_json_config, add_generation_prompt=False, continue_final_message=True)
+    print('@'*100, '\n',resp)#  '\n-----\n', next_action)
+    game_info = json.loads(resp)
+    return game_info
 
-# #     if repeat_action_times == 0:
-# #         return dummy_keyboard("interact", 1)
-# #     elif layout == "horizontal":
-# #         return dummy_keyboard("move_left", repeat_action_times)
-# #     elif layout == "vertical":
-# #         return dummy_keyboard("move_up", repeat_action_times)
+def action_in_options(prompt, images, options):
+    act_regex = "|".join(options)
+    #action specific generation configuration
+    guided_json_config = {
+        "max_tokens": 1028,
+        "temperature": 0.2,
+        # "enable_thinking": False
+        "skip_special_tokens": False,
+        "guided_decoding": {
+            "regex": act_regex  # The key 'json' specifies the type
+        }
+    }
 
-# # #analysis
-# ass_p = "{\n"
-# def analyze_game_info(prompt, images, schema):
+    return llm.dialogue_generator(prompt=prompt, assistant_prompt=ass_p, images=images, generation_config=guided_json_config, add_generation_prompt=False, continue_final_message=True)
     
-#     guided_json_config = {
-#         "max_tokens": 1028,
-#         "temperature": 0.2,
-#         # "enable_thinking": False
-#         "skip_special_tokens": False,
-#         # "guided_decoding": {
-#         #     "json": schema  # The key 'json' specifies the type
-#         # }
-#     }
-
-#     resp = llm.dialogue_generator(prompt=prompt, assistant_prompt=ass_p, images=images, generation_config=guided_json_config, add_generation_prompt=False, continue_final_message=True)
-#     print('@'*100, '\n',resp)#  '\n-----\n', next_action)
-#     game_info = json.loads(resp)
-#     return game_info
-
-# def action_in_options(prompt, images, options):
-#     act_regex = "|".join(options)
-#     #action specific generation configuration
-#     guided_json_config = {
-#         "max_tokens": 1028,
-#         "temperature": 0.2,
-#         # "enable_thinking": False
-#         "skip_special_tokens": False,
-#         "guided_decoding": {
-#             "regex": act_regex  # The key 'json' specifies the type
-#         }
-#     }
-
-#     return llm.dialogue_generator(prompt=prompt, assistant_prompt=ass_p, images=images, generation_config=guided_json_config, add_generation_prompt=False, continue_final_message=True)
-    
-
-# #intermediate prompt assuming next action/desire is to be asked here (i.e. not the first prompt)
-
-
-
-# def main_menu_handler():
-
-#     json_schema = Info.model_json_schema()
-#     print(json_schema)
-
-#     #analyze game screenshot
-#     images = [Image.open("debug_frames/img2.png")]#[Image.open("debug_frames/Memes-02-08-7_1.png")]
-#     anal_prompt = "You are a Gaming AI who is currently playing a video game. Analyze the current state of the game. Provide a JSON of your observations (only the ones relevant to playing the game, observations should also include spatial layout (vertical/horizontal/grid) if applicable)."
-#     game_info = analyze_game_info(anal_prompt, images, json_schema)
-
-#     ## paperlily main menu specific
-#     #extract relevant game information
-#     menu_options = game_info["menu_options"]
-#     menu_layout = game_info["menu_layout"]
-
-#     # select action based on extracted game info
-#     act_prompt = f"You are a Gaming AI who is currently playing a video game. Analyze the current state of the game.\nAvailable options:{menu_options}\n\n Choose a single action based on the available options."
-#     #image maybe maybe not needed, unsure
-#     # images = [Image.open("debug_frames/img2.png")]#[Image.open("debug_frames/Memes-02-08-7_1.png")]
-#     resp_act = action_in_options(act_prompt, images, menu_options)
-#     print("@"*100, '\n',resp_act)
-
-#     #dummy controller takes action in MAIN MENU
-#     selected_option = game_info["selected_option"]
-#     next_action = resp_act
-#     next_action_index = menu_options.index(next_action)
-#     cur_selection_index = menu_options.index(selected_option)
-#     print(dummy_controller(cur_selection_index, next_action_index, menu_layout))
-
-
-# def dialogue_handler():
-#     json_schema = Dialogue.model_json_schema()
-#     print(json_schema)
-
-#     #does a move just to make sure there if there are player choices available, at least one will be highlighted by default
-#     def dummy_move():
-#         dummy_keyboard("move_down", 1)
-#         dummy_keyboard("move_up", 1)
-#         dummy_keyboard("move_right", 1)
-#         dummy_keyboard("move_left", 1)
-
-#     dummy_move()
-#     #analyze game screenshot
-#     images = [Image.open("debug_frames/dialogue-20.png")]#[Image.open("debug_frames/Memes-02-08-7_1.png")]
-#     anal_prompt = "You are a Gaming AI who is currently playing a video game. Analyze the current state of the game. Provide a JSON of your observations (only the ones relevant to playing the game)."
-#     game_info = analyze_game_info(anal_prompt, images, json_schema)
-#     print(game_info)
-#     action_options = game_info["player_choices"]
-    
-#     if action_options:
-#         # cur_selection_index = menu_options.index(selected_option)
-#         cur_selection_index = action_options.index(game_info["selected_choice"])
-#         act_prompt = f"You are a Gaming AI who is currently playing a video game. Analyze the current state of the game.\nAvailable options:{action_options}\n\n Choose a single action based on the available options."
-#         resp_act = action_in_options(act_prompt, images, action_options)
-#         print("---"*100, '\n', resp_act)
-#         next_action = resp_act
-#         next_action_index = action_options.index(next_action)
-#         menu_layout = game_info["menu_layout"]
-#         print(dummy_controller(cur_selection_index, next_action_index, layout='vertical'))
-#     else:
-#         cur_selection_index, next_action_index = 0, 0
-#         menu_layout = None
-#         print(dummy_controller(cur_selection_index, next_action_index, menu_layout))
+model_init_kwargs = {"gpu_memory_utilization": 0.93, "max_model_len": 8000, "trust_remote_code": True,
+    }
+model_config = BaseModelConfig(model_path_or_id="Qwen/Qwen3-VL-8B-Instruct-FP8", is_vision_model=True, uses_special_chat_template=False, model_init_kwargs=model_init_kwargs)
+llm = JohnVLLM(model_config).load_model(model_config)
 
 
 # def movement_handler():
@@ -322,170 +157,170 @@
 
 
 # #############################################################################
-import time
-import os
-import logging
-import cv2
-import numpy as np
-from typing import Optional
+# import time
+# import os
+# import logging
+# import cv2
+# import numpy as np
+# from typing import Optional
 
-# --- Imports ---
-# 1. The Optimized Capture System (saved from previous step)
-from gaming.game_capture import CaptureManager, SystemConfig
+# # --- Imports ---
+# # 1. The Optimized Capture System (saved from previous step)
+# from gaming.game_capture import CaptureManager, SystemConfig
 
-# 2. Your Input Controller
-try:
-    from gaming.controls import InputControllerThread
-except ImportError:
-    # Mocking for demonstration if the file isn't present locally
-    import threading
-    class InputControllerThread(threading.Thread):
-        def execute_action(self, action): print(f"[MockInput] Executing: {action}")
-        def stop(self): pass
-        def run(self): pass
+# # 2. Your Input Controller
+# try:
+#     from gaming.controls import InputControllerThread
+# except ImportError:
+#     # Mocking for demonstration if the file isn't present locally
+#     import threading
+#     class InputControllerThread(threading.Thread):
+#         def execute_action(self, action): print(f"[MockInput] Executing: {action}")
+#         def stop(self): pass
+#         def run(self): pass
 
-# --- Setup Logging ---
-logging.basicConfig(
-    level=logging.INFO, 
-    format="%(asctime)s - %(levelname)s - %(message)s",
-    datefmt="%H:%M:%S"
-)
+# # --- Setup Logging ---
+# logging.basicConfig(
+#     level=logging.INFO, 
+#     format="%(asctime)s - %(levelname)s - %(message)s",
+#     datefmt="%H:%M:%S"
+# )
 
 
-# hacky temporary fix for running with sudo -- gives permission of captured images to user.
-def save_as_user(path, image):
-    """Saves an image and immediately restores ownership to the non-root user."""
-    # 1. Save the file (currently owned by root)
-    cv2.imwrite(path, image)
+# # hacky temporary fix for running with sudo -- gives permission of captured images to user.
+# def save_as_user(path, image):
+#     """Saves an image and immediately restores ownership to the non-root user."""
+#     # 1. Save the file (currently owned by root)
+#     cv2.imwrite(path, image)
     
-    # 2. Check if we are running via sudo
-    sudo_uid = os.environ.get('SUDO_UID')
-    sudo_gid = os.environ.get('SUDO_GID')
+#     # 2. Check if we are running via sudo
+#     sudo_uid = os.environ.get('SUDO_UID')
+#     sudo_gid = os.environ.get('SUDO_GID')
     
-    if sudo_uid and sudo_gid:
-        try:
-            # 3. Change ownership back to the original user
-            os.chown(path, int(sudo_uid), int(sudo_gid))
-        except Exception as e:
-            logging.warning(f"Could not change file ownership: {e}")
+#     if sudo_uid and sudo_gid:
+#         try:
+#             # 3. Change ownership back to the original user
+#             os.chown(path, int(sudo_uid), int(sudo_gid))
+#         except Exception as e:
+#             logging.warning(f"Could not change file ownership: {e}")
 
 
-def capture_action_sequence():
-    """
-    Orchestrates the Before -> Action -> After capture flow.
-    """
-    # --- Configuration ---
-    ACTION_DURATION = 1.0
-    OUTPUT_DIR = 'debug_frames/character_dataset'
+# def capture_action_sequence():
+#     """
+#     Orchestrates the Before -> Action -> After capture flow.
+#     """
+#     # --- Configuration ---
+#     ACTION_DURATION = 1.0
+#     OUTPUT_DIR = 'debug_frames/character_dataset'
     
-    # Configure the system for VLM (1000x1000)
-    config = SystemConfig(
-        device_index=0,
-        src_width=2560,
-        src_height=1440,
-        target_fps=60,
-        target_size=(1000, 1000), # VLM Standard
-        enable_psutil=True,
-        warmup_time=2.0
-    )
+#     # Configure the system for VLM (1000x1000)
+#     config = SystemConfig(
+#         device_index=0,
+#         src_width=2560,
+#         src_height=1440,
+#         target_fps=60,
+#         target_size=(1000, 1000), # VLM Standard
+#         enable_psutil=True,
+#         warmup_time=2.0
+#     )
 
-    manager = CaptureManager(config)
-    input_controller = InputControllerThread()
+#     manager = CaptureManager(config)
+#     input_controller = InputControllerThread()
     
-    try:
-        # 1. Start Background Processes (Includes Warmup)
-        logging.info("System: Initializing workers...")
-        input_controller.start()
-        manager.start_system() # This blocks for 2.0s for warmup
+#     try:
+#         # 1. Start Background Processes (Includes Warmup)
+#         logging.info("System: Initializing workers...")
+#         input_controller.start()
+#         manager.start_system() # This blocks for 2.0s for warmup
         
-        time.sleep(2.0)
-        # 2. Capture "Before" State
-        logging.info("Phase: Capturing 'Before' frame...")
-        # We capture a tiny slice of time to ensure we get a fresh frame
-        before_frame_raw = manager.get_snapshot()
-        if before_frame_raw is None:
-            raise RuntimeError("Failed to capture 'Before' frame.")
+#         time.sleep(2.0)
+#         # 2. Capture "Before" State
+#         logging.info("Phase: Capturing 'Before' frame...")
+#         # We capture a tiny slice of time to ensure we get a fresh frame
+#         before_frame_raw = manager.get_snapshot()
+#         if before_frame_raw is None:
+#             raise RuntimeError("Failed to capture 'Before' frame.")
 
-        # 3. Capture "Action" State
-        logging.info(f"Phase: Executing Action for {ACTION_DURATION}s...")
+#         # 3. Capture "Action" State
+#         logging.info(f"Phase: Executing Action for {ACTION_DURATION}s...")
         
-        # Start filling the RAM buffer
-        manager.start_capture()
+#         # Start filling the RAM buffer
+#         manager.start_capture()
         
-        # Trigger the physical action
-        start_t = time.perf_counter()
-        input_controller.execute_action({
-            "type": "key_press",
-            "details": {"key": ["left"], "hold_time": ACTION_DURATION}
-        })
+#         # Trigger the physical action
+#         start_t = time.perf_counter()
+#         input_controller.execute_action({
+#             "type": "key_press",
+#             "details": {"key": ["left"], "hold_time": ACTION_DURATION}
+#         })
         
-        # Wait strictly for the duration
-        # We calculate sleep to ensure exact timing, accounting for execution overhead
-        elapsed = time.perf_counter() - start_t
-        remaining = ACTION_DURATION - elapsed
-        if remaining > 0:
-            time.sleep(remaining)
+#         # Wait strictly for the duration
+#         # We calculate sleep to ensure exact timing, accounting for execution overhead
+#         elapsed = time.perf_counter() - start_t
+#         remaining = ACTION_DURATION - elapsed
+#         if remaining > 0:
+#             time.sleep(remaining)
             
-        # Stop filling buffer
-        during_frames_raw = manager.stop_capture()
-        logging.info(f"Action captured: {len(during_frames_raw)} raw frames.")
+#         # Stop filling buffer
+#         during_frames_raw = manager.stop_capture()
+#         logging.info(f"Action captured: {len(during_frames_raw)} raw frames.")
 
-        # 4. Capture "After" State
-        # Wait a moment for physics/animations to settle
-        time.sleep(0.2)
+#         # 4. Capture "After" State
+#         # Wait a moment for physics/animations to settle
+#         time.sleep(0.2)
         
-        logging.info("Phase: Capturing 'After' frame...")
-        after_frame_raw = manager.get_snapshot()
-        if after_frame_raw is None:
-            raise RuntimeError("Failed to capture 'After' frame.")
+#         logging.info("Phase: Capturing 'After' frame...")
+#         after_frame_raw = manager.get_snapshot()
+#         if after_frame_raw is None:
+#             raise RuntimeError("Failed to capture 'After' frame.")
 
-        # 5. Post-Processing (The Heavy Lifting)
-        logging.info("Phase: Post-Processing (Resizing & Letterboxing)...")
+#         # 5. Post-Processing (The Heavy Lifting)
+#         logging.info("Phase: Post-Processing (Resizing & Letterboxing)...")
         
-        # Combine everything into one list to maximize thread pool efficiency
-        # Structure: [Before] + [During...] + [After]
-        all_raw_frames = [before_frame_raw] + during_frames_raw + [after_frame_raw]
+#         # Combine everything into one list to maximize thread pool efficiency
+#         # Structure: [Before] + [During...] + [After]
+#         all_raw_frames = [before_frame_raw] + during_frames_raw + [after_frame_raw]
         
-        t0 = time.perf_counter()
-        # This runs the 1000x1000 letterbox logic on all cores
-        all_processed = manager.post_process_frames(all_raw_frames)
-        logging.info(f"Processed {len(all_processed)} frames in {time.perf_counter() - t0:.3f}s")
+#         t0 = time.perf_counter()
+#         # This runs the 1000x1000 letterbox logic on all cores
+#         all_processed = manager.post_process_frames(all_raw_frames)
+#         logging.info(f"Processed {len(all_processed)} frames in {time.perf_counter() - t0:.3f}s")
 
-        # Separate them back out
-        before_final = all_processed[0]
-        during_final = all_processed[1:-1]
-        after_final = all_processed[-1]
+#         # Separate them back out
+#         before_final = all_processed[0]
+#         during_final = all_processed[1:-1]
+#         after_final = all_processed[-1]
 
-        # 6. Save to Disk
-        # Note: cv2.imwrite expects BGR, which is what we have. No conversion needed.
-        logging.info(f"Saving to {OUTPUT_DIR}...")
-        os.makedirs(OUTPUT_DIR, exist_ok=True)
+#         # 6. Save to Disk
+#         # Note: cv2.imwrite expects BGR, which is what we have. No conversion needed.
+#         logging.info(f"Saving to {OUTPUT_DIR}...")
+#         os.makedirs(OUTPUT_DIR, exist_ok=True)
         
-        sudo_uid = os.environ.get('SUDO_UID')
-        sudo_gid = os.environ.get('SUDO_GID')
-        if sudo_uid and sudo_gid:
-            os.chown(OUTPUT_DIR, int(sudo_uid), int(sudo_gid))
+#         sudo_uid = os.environ.get('SUDO_UID')
+#         sudo_gid = os.environ.get('SUDO_GID')
+#         if sudo_uid and sudo_gid:
+#             os.chown(OUTPUT_DIR, int(sudo_uid), int(sudo_gid))
 
-        # Use the helper function instead of cv2.imwrite directly -- TODO: drop when moving on.
-        save_as_user(os.path.join(OUTPUT_DIR, 'capture_before_action.png'), before_final)
-        save_as_user(os.path.join(OUTPUT_DIR, 'capture_after_action.png'), after_final)
+#         # Use the helper function instead of cv2.imwrite directly -- TODO: drop when moving on.
+#         save_as_user(os.path.join(OUTPUT_DIR, 'capture_before_action.png'), before_final)
+#         save_as_user(os.path.join(OUTPUT_DIR, 'capture_after_action.png'), after_final)
         
-        for i, frame in enumerate(during_final):
-            fname = f"during_action_{i:04d}.png"
-            save_as_user(os.path.join(OUTPUT_DIR, fname), frame)
-        logging.info("Sequence complete.")
+#         for i, frame in enumerate(during_final):
+#             fname = f"during_action_{i:04d}.png"
+#             save_as_user(os.path.join(OUTPUT_DIR, fname), frame)
+#         logging.info("Sequence complete.")
 
-    except Exception as e:
-        logging.error(f"Critical Error: {e}", exc_info=True)
-    finally:
-        # Clean shutdown
-        if input_controller.is_alive():
-            input_controller.stop()
-        manager.stop_system()
-        logging.info("System shutdown.")
+#     except Exception as e:
+#         logging.error(f"Critical Error: {e}", exc_info=True)
+#     finally:
+#         # Clean shutdown
+#         if input_controller.is_alive():
+#             input_controller.stop()
+#         manager.stop_system()
+#         logging.info("System shutdown.")
 
-if __name__ == "__main__":
-    capture_action_sequence()
+# if __name__ == "__main__":
+#     capture_action_sequence()
 
 
 
@@ -987,3 +822,78 @@ if __name__ == "__main__":
 #             break
             
 #     print("\n--- Simulation Complete ---")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#async vllm generator test
+# from interfaces.vllm_interface import JohnVLLMAsync
+# from interfaces.base import BaseModelConfig
+
+
+# generation_config = {
+#     "max_tokens": 512,
+#     "temperature": 0.7,
+#     "top_p": 1.0,
+#     "top_k": -1,
+#     "repetition_penalty": 1.0,
+#     "output_kind": "DELTA",
+#     # Guided decoding or other complex params can be added here
+# }
+
+# import asyncio
+
+# model_init_kwargs = {"gpu_memory_utilization": 0.93, "max_model_len": 8000, "trust_remote_code": True,
+#     }
+# model_config = BaseModelConfig(model_path_or_id="Qwen/Qwen3-VL-8B-Instruct-FP8", is_vision_model=True, uses_special_chat_template=False, model_init_kwargs=model_init_kwargs)
+
+# async def generate():
+#     vllm = await JohnVLLMAsync(model_config).load_model(model_config)
+#     # async with vllm:
+
+#     async for response in vllm.dialogue_generator(prompt="Hello", generation_config=generation_config):
+#         print(response)
+
+
+# asyncio.run(generate())
