@@ -6,7 +6,7 @@
 [subrepo]
 	remote = git@github.com:Scikous/Orata.git
 	branch = main
-	commit = f1624d5ccf4a915620c0687d5baba7e2270368f8
-	parent = 89ebdb374b2f091dd54a0193c06e966cd86b13b3
+	commit = f9e6126c930e93c2e5ba5e0e06e68b439c54843d
+	parent = c4122e4ac19c3c8eb18ab8a031b96a1a569e21b8
 	method = merge
 	cmdver = 0.4.9
