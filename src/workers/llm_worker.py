@@ -8,10 +8,10 @@ from src.utils.env_utils import setup_project_root
 from src.utils import logger as app_logger
 from src.utils.performance_utils import apply_system_optimizations, async_check_gpu_memory
 from src.common import config as app_config
-from LLM_Wizard.model_utils import load_character, contains_sentence_terminator
+from Sagex.model_utils import load_character, contains_sentence_terminator
 
 # New Modular Interface Import
-from LLM_Wizard.interfaces.factory import create_llm_interface
+from Sagex.interfaces.factory import create_llm_interface
 
 app_logger.setup_logging()
 logger = app_logger.get_logger("LLMWorker")

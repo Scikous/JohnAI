@@ -4,7 +4,7 @@ from src.utils.env_utils import setup_project_root
 from src.utils import logger as app_logger
 from src.utils.performance_utils import apply_system_optimizations, async_check_gpu_memory
 from src.common import config as app_config
-from TTS_Wizard.realtimetts import RealTimeTTS, pipertts_engine, coquitts_engine
+from Orata.realtimetts import RealTimeTTS, pipertts_engine, coquitts_engine
 
 app_logger.setup_logging()
 logger = app_logger.get_logger("TTSWorker")

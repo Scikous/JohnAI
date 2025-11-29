@@ -9,8 +9,8 @@ setup_project_root()
 from src.utils import logger as app_logger
 from src.utils.app_utils import build_livechat_controller_config
 from src.common import config as app_config
-from Livechat_Wizard.livechat import LiveChatController
-from Livechat_Wizard.data_models import UnifiedMessage # Assuming data_models.py is accessible from the project root
+from Plexus.livechat import LiveChatController
+from Plexus.data_models import UnifiedMessage # Assuming data_models.py is accessible from the project root
 
 
 # Get a logger for this worker

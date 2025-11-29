@@ -3,7 +3,7 @@ from src.utils.env_utils import setup_project_root
 from src.utils import logger as app_logger
 from src.common import config as app_config
 from src.utils.performance_utils import apply_system_optimizations, sync_check_gpu_memory
-from STT_Wizard.STT import WhisperSTT
+from Aurata.STT import WhisperSTT
     
 app_logger.setup_logging()
 logger = app_logger.get_logger("STTClientWorker")

@@ -29,7 +29,7 @@
         "repetition_penalty": 1.0,
         "output_kind": "DELTA",
         "enable_thinking": false,
-        "character_info_json": "LLM_Wizard/characters/character.json"
+        "character_info_json": "Sagex/characters/character.json"
     },
 
     "context_llm_settings":

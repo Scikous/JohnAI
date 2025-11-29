@@ -1,7 +1,7 @@
-# Livechat_Wizard/config_builder.py
+# Plexus/config_builder.py
 import logging
 from src.utils.env_utils import get_env_var
-from Livechat_Wizard.twitch import fetch_twitch_user_ids
+from Plexus.twitch import fetch_twitch_user_ids
 
 logger = logging.getLogger(__name__)
 

@@ -4,8 +4,8 @@ from src.utils.env_utils import setup_project_root
 from src.utils import logger as app_logger
 from src.common import config as app_config
 from src.utils.performance_utils import apply_system_optimizations, async_check_gpu_memory
-from LLM_Wizard.models import LLMModelConfig, JohnExllamav2
-from Livechat_Wizard.data_models import UnifiedMessage # Assuming data_models.py is accessible from the project root
+from Sagex.models import LLMModelConfig, JohnExllamav2
+from Plexus.data_models import UnifiedMessage # Assuming data_models.py is accessible from the project root
 
 app_logger.setup_logging()
 logger = app_logger.get_logger("ContextLLMWorker")

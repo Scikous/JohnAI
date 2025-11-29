@@ -103,9 +103,9 @@ def main():
 
     # Prepare the command for the TTS service
     python_executable_tts = get_python_executable(VENV_NAME_TTS)
-    tts_script = os.path.join(PROJECT_ROOT, "TTS_Wizard", "GPT_SoVITS", "api_v2.py")
+    tts_script = os.path.join(PROJECT_ROOT, "Orata", "GPT_SoVITS", "api_v2.py")
     # Corrected path for tts_config, assuming it's inside the second GPT_SoVITS
-    tts_config = os.path.join(PROJECT_ROOT, "TTS_Wizard", "GPT_SoVITS", "GPT_SoVITS", "configs", "tts_infer.yaml")
+    tts_config = os.path.join(PROJECT_ROOT, "Orata", "GPT_SoVITS", "GPT_SoVITS", "configs", "tts_infer.yaml")
 
 
     if not os.path.exists(tts_script):
@@ -152,8 +152,8 @@ def main():
 
         print(f"Started AI process with PID: {process_ai.pid}")
 
-        # Run the TTS service in the TTS_Wizard/GPT_SoVITS directory
-        tts_cwd = os.path.join(PROJECT_ROOT, "TTS_Wizard", "GPT_SoVITS")
+        # Run the TTS service in the Orata/GPT_SoVITS directory
+        tts_cwd = os.path.join(PROJECT_ROOT, "Orata", "GPT_SoVITS")
         # process_tts = subprocess.Popen(command_tts, cwd=tts_cwd, **common_popen_kwargs)
         # process_tts = subprocess.Popen(command_tts, cwd=tts_cwd, env=env_tts, **common_popen_kwargs)
 
