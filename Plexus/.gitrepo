@@ -6,7 +6,7 @@
 [subrepo]
 	remote = git@github.com:Scikous/Plexus.git
 	branch = main
-	commit = c4c647b3e98658b4601da230461ae5fb8808542e
-	parent = 35fa0d6f003eec267b38acd03225e8b6e5e0e221
+	commit = 6ec5c2adf2e61dab0d5604ac112a6ecf9c64c8cb
+	parent = 8ed75c57083ce21e88bb8550418944d5b50cd6fa
 	method = merge
 	cmdver = 0.4.9
